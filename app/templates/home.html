@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <h1>Where every podcast sits, in every market, over time.</h1>
+  <p>PodScope records Apple and Spotify chart positions across countries and
+     categories every six hours — so you can see not just where a show ranks
+     today, but where it's heading.</p>
+</section>
+
+<div class="stat-row">
+  <div class="stat">
+    <div class="n">{{ "{:,}".format(stats.shows) }}</div>
+    <div class="k">shows tracked</div>
+  </div>
+  <div class="stat">
+    <div class="n">{{ "{:,}".format(stats.snapshots) }}</div>
+    <div class="k">chart snapshots recorded</div>
+  </div>
+  <div class="stat">
+    <div class="n">{{ stats.days_tracked }}</div>
+    <div class="k">days of history</div>
+  </div>
+</div>
+
+<p style="color:var(--muted);max-width:56ch">
+  Search any show above to see its current rankings, its trend line, and the
+  markets where it charts. The longer PodScope runs, the deeper the history —
+  data that can't be backfilled after the fact.
+</p>
+{% endblock %}

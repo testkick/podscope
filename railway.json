@@ -1,0 +1,21 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": { "builder": "DOCKERFILE", "dockerfilePath": "Dockerfile" },
+  "deploy": {
+    "startCommand": "uvicorn app.api.main:app --host 0.0.0.0 --port ${PORT}",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  },
+  "_notes": {
+    "purpose": "This file configures the WEB service. Create the collector as a SECOND service from the same repo.",
+    "collector_service": {
+      "startCommand": "python -m app.collectors.run",
+      "cronSchedule": "0 */6 * * *",
+      "note": "Cron services run to completion then exit; no PORT / healthcheck needed."
+    },
+    "postgres": "Add the Railway Postgres plugin; it injects DATABASE_URL into both services automatically.",
+    "env_flags": {
+      "DISABLE_SPOTIFY": "Set to 1 to run Apple-only while confirming Spotify endpoint terms."
+    }
+  }
+}

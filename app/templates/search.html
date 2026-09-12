@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Search: {{ q }} — PodScope{% endblock %}
+{% block content %}
+<h2 class="sec">Results for “{{ q }}”</h2>
+{% if results %}
+<ul class="results">
+  {% for s in results %}
+  <li>
+    {% if s.artwork_url %}<img src="{{ s.artwork_url }}" alt="">{% endif %}
+    <div>
+      <div class="nm"><a href="/show/{{ s.slug }}">{{ s.name }}</a></div>
+      {% if s.publisher %}<div class="pb">{{ s.publisher }}</div>{% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p style="color:var(--muted)">No shows found yet. If the collector is still
+warming up, charting shows will appear here within a few hours.</p>
+{% endif %}
+{% endblock %}
