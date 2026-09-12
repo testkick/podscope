@@ -151,3 +151,56 @@ def show_guest_profile(db, show_id: int):
         "suitability_note": p.suitability_note,
         "has_contact": bool(p.contact_email),  # gate the actual email behind Pro
     }
+
+
+# ---------- collector health ----------
+from app.db.models import CollectionRun  # noqa: E402
+
+
+def collector_health(db):
+    """Last run per platform: status, when, rows, and any logged problems.
+    Powers /health/collector so 'is the cron alive?' is a URL, not a log dig."""
+    from datetime import datetime, timezone
+
+    platforms = ["apple", "spotify"]
+    out = {"platforms": {}, "overall": "unknown"}
+    healthy = []
+    for plat in platforms:
+        run = db.scalar(
+            select(CollectionRun)
+            .where(CollectionRun.platform == plat)
+            .order_by(CollectionRun.started_at.desc())
+            .limit(1)
+        )
+        if not run:
+            out["platforms"][plat] = {"status": "never_run"}
+            healthy.append(False)
+            continue
+        finished = run.finished_at or run.started_at
+        age_hours = None
+        if finished:
+            age_hours = round(
+                (datetime.utcnow() - finished).total_seconds() / 3600, 1
+            )
+        # "fresh" = last successful-ish run within ~7h (cron is every 6h)
+        is_fresh = (age_hours is not None and age_hours <= 7
+                    and run.rows_inserted > 0)
+        out["platforms"][plat] = {
+            "status": run.status,
+            "last_run": run.started_at.isoformat() if run.started_at else None,
+            "finished": finished.isoformat() if finished else None,
+            "age_hours": age_hours,
+            "rows_inserted": run.rows_inserted,
+            "charts_collected": run.charts_collected,
+            "fresh": is_fresh,
+            "problems": run.notes or None,
+        }
+        healthy.append(is_fresh)
+
+    if all(healthy):
+        out["overall"] = "ok"
+    elif any(healthy):
+        out["overall"] = "degraded"
+    else:
+        out["overall"] = "down"
+    return out

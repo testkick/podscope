@@ -32,6 +32,25 @@ def health():
     return {"ok": True}
 
 
+@app.get("/health/collector")
+def health_collector(db: Session = Depends(get_session)):
+    """Machine-readable collector status: last run per platform, freshness,
+    row counts, and any logged per-chart problems. Use this for uptime pings."""
+    return Q.collector_health(db)
+
+
+@app.get("/status", response_class=HTMLResponse)
+def status_page(request: Request, db: Session = Depends(get_session)):
+    """Human-readable collector status page. Glance at /status in a browser to
+    see whether the cron is alive and when it last wrote data."""
+    health = Q.collector_health(db)
+    stats = Q.platform_stats(db)
+    return templates.TemplateResponse(
+        "status.html",
+        {"request": request, "health": health, "stats": stats},
+    )
+
+
 # ---------- HTML pages (the SEO surface) ----------
 
 @app.get("/", response_class=HTMLResponse)

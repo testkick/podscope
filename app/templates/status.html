@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Collector status — PodScope{% endblock %}
+{% block content %}
+<h1 style="font-size:28px;letter-spacing:-.02em;margin:0 0 4px">Collector status</h1>
+<p style="color:var(--muted);margin:0 0 24px">
+  Live view of the chart collector. If a platform hasn't written data in over
+  ~7 hours, something's wrong with the cron.
+</p>
+
+{% set badge = {'ok':'#1a7f4b','degraded':'#8a6d00','down':'#c0392b','unknown':'#6b6a63'} %}
+<div style="display:inline-block;padding:6px 14px;border-radius:20px;font-weight:800;
+     color:#fff;background:{{ badge[health.overall] }};margin-bottom:24px">
+  {{ health.overall|upper }}
+</div>
+
+<div class="stat-row" style="margin:0 0 32px">
+  <div class="stat"><div class="n">{{ "{:,}".format(stats.shows) }}</div><div class="k">shows tracked</div></div>
+  <div class="stat"><div class="n">{{ "{:,}".format(stats.snapshots) }}</div><div class="k">snapshots</div></div>
+  <div class="stat"><div class="n">{{ stats.days_tracked }}</div><div class="k">days of history</div></div>
+</div>
+
+{% for plat, p in health.platforms.items() %}
+<div class="guest-box" style="margin-bottom:16px">
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+    <strong style="font-size:18px;text-transform:capitalize">{{ plat }}</strong>
+    {% if p.status == 'never_run' %}
+      <span class="conf-low">has never run</span>
+    {% else %}
+      <span style="font-weight:700;color:{{ '#1a7f4b' if p.fresh else '#c0392b' }}">
+        {{ 'fresh' if p.fresh else 'stale' }}
+      </span>
+      <span style="color:var(--muted)">
+        last run {{ p.age_hours }}h ago · {{ "{:,}".format(p.rows_inserted) }} rows · {{ p.charts_collected }} charts
+      </span>
+    {% endif %}
+  </div>
+  {% if p.problems %}
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer;color:var(--muted);font-size:14px">
+      per-chart problems logged (click to expand)
+    </summary>
+    <pre style="white-space:pre-wrap;font-size:12px;color:var(--muted);margin:8px 0 0;max-height:220px;overflow:auto">{{ p.problems }}</pre>
+  </details>
+  {% endif %}
+</div>
+{% endfor %}
+
+<p style="color:var(--muted);font-size:13px;margin-top:20px">
+  Machine-readable version at <a href="/health/collector">/health/collector</a> —
+  point an uptime monitor at it and alert when <code>overall</code> isn't
+  <code>ok</code>.
+</p>
+{% endblock %}
