@@ -18,6 +18,7 @@ load-bearing dependency of a paid product. The collector is isolated so you can
 disable Spotify without touching Apple.
 """
 
+import sys
 from datetime import datetime
 
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -52,49 +53,65 @@ def collect_spotify(db) -> CollectionRun:
     charts = 0
     problems = []
 
-    with client() as http:
-        for _apple_cc, cc, _name in MARKETS:
-            for ctype in SPOTIFY_CHART_TYPES:
-                url = CHART_URL.format(ctype=ctype, cc=cc)
-                try:
-                    payload = _get_json(http, url)
-                    if not isinstance(payload, list):
-                        # Some deployments wrap it: {"charts":[...]} etc.
-                        payload = (
-                            payload.get("charts")
-                            or payload.get("results")
-                            or payload.get("data")
-                            or []
-                        )
-                    rank = 0
-                    for row in payload:
-                        rank += 1
-                        sid = _spotify_id(row)
-                        name = (row.get("showName") or row.get("name")
-                                or "Unknown")
-                        publisher = (row.get("showPublisher")
-                                     or row.get("publisher"))
-                        artwork = (row.get("showImageUrl")
-                                   or row.get("imageUrl"))
-                        show = upsert_show(
-                            db, spotify_id=sid, name=name,
-                            publisher=publisher, artwork_url=artwork,
-                        )
-                        if insert_snapshot(
-                            db, show_id=show.id, platform="spotify",
-                            country=cc, chart=ctype, rank=rank,
-                        ):
-                            inserted += 1
-                    charts += 1
-                    db.commit()
-                except Exception as exc:  # noqa: BLE001
-                    db.rollback()
-                    snippet = ""
+    try:
+        with client() as http:
+            for _apple_cc, cc, _name in MARKETS:
+                for ctype in SPOTIFY_CHART_TYPES:
+                    url = CHART_URL.format(ctype=ctype, cc=cc)
                     try:
-                        snippet = http.get(url).text[:500]
-                    except Exception:
-                        pass
-                    problems.append(f"{cc}/{ctype}: {exc} :: {snippet}")
+                        payload = _get_json(http, url)
+                        if not isinstance(payload, list):
+                            # Some deployments wrap it: {"charts":[...]} etc.
+                            payload = (
+                                payload.get("charts")
+                                or payload.get("results")
+                                or payload.get("data")
+                                or []
+                            )
+                        rank = 0
+                        for row in payload:
+                            rank += 1
+                            sid = _spotify_id(row)
+                            name = (row.get("showName") or row.get("name")
+                                    or "Unknown")
+                            publisher = (row.get("showPublisher")
+                                         or row.get("publisher"))
+                            artwork = (row.get("showImageUrl")
+                                       or row.get("imageUrl"))
+                            show = upsert_show(
+                                db, spotify_id=sid, name=name,
+                                publisher=publisher, artwork_url=artwork,
+                            )
+                            if insert_snapshot(
+                                db, show_id=show.id, platform="spotify",
+                                country=cc, chart=ctype, rank=rank,
+                            ):
+                                inserted += 1
+                        charts += 1
+                        db.commit()
+                    except Exception as exc:  # noqa: BLE001
+                        db.rollback()
+                        # tenacity's @retry wraps the underlying error (e.g.
+                        # HTTPStatusError, ReadTimeout) in a RetryError once
+                        # all attempts are exhausted. Log it clearly with
+                        # platform/region/chart context and move on to the
+                        # next chart/region rather than crashing the run.
+                        print(
+                            f"[spotify] error fetching chart cc={cc} chart={ctype}: "
+                            f"{exc!r}",
+                            file=sys.stderr,
+                        )
+                        snippet = ""
+                        try:
+                            snippet = http.get(url).text[:500]
+                        except Exception:
+                            pass
+                        problems.append(f"{cc}/{ctype}: {exc} :: {snippet}")
+    except Exception as exc:  # noqa: BLE001 - never let spotify take down the run
+        db.rollback()
+        print(f"[spotify] fatal error, aborting spotify collection early: {exc!r}",
+              file=sys.stderr)
+        problems.append(f"fatal: {exc}")
 
     run.finished_at = datetime.utcnow()
     run.rows_inserted = inserted
