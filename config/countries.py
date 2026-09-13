@@ -37,5 +37,17 @@ APPLE_GENRES = {
 }
 
 # Spotify's public chart endpoint exposes a smaller set. "top" and "trending"
-# are region-wide (not per-category) on the public page. We record both.
-SPOTIFY_CHART_TYPES = ["top", "trending"]
+# Spotify's public chart slugs, as used by podcastcharts.byspotify.com.
+# The chart type MUST match Spotify's own slug. The site uses "top-podcasts"
+# (NOT "top") — requesting "top" fails every time, which is why the top charts
+# were missing while "trending" worked. Verified against the live site URLs
+# (e.g. podcastcharts.byspotify.com/us/top-podcasts).
+#
+# Spotify also publishes per-category charts (top 50 per category, select
+# countries only) at slugs like "news", "comedy", etc. — the equivalent of the
+# Apple genre charts. Add them here once "top-podcasts" is confirmed landing.
+# NOTE: this rides an undocumented frontend JSON endpoint Spotify doesn't
+# officially support; it can change without notice (Apple's feed is the stable
+# spine; treat Spotify as best-effort).
+SPOTIFY_CHART_TYPES = ["top-podcasts", "trending"]
+

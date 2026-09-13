@@ -22,7 +22,9 @@ from datetime import datetime
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from app.collectors.common import client, upsert_show, insert_snapshot
+from app.collectors.common import (
+    client, upsert_show, insert_snapshot, polite_pause, CIRCUIT_BREAK_AFTER,
+)
 from app.db.models import CollectionRun
 from config.countries import MARKETS, SPOTIFY_CHART_TYPES
 
@@ -46,16 +48,19 @@ def collect_spotify(db) -> CollectionRun:
     run = CollectionRun(platform="spotify", status="running",
                         started_at=datetime.utcnow())
     db.add(run)
-    db.flush()
+    db.commit()          # persist the run row NOW so a later chart-level
+    run_id = run.id      # rollback can't discard it; keep id to re-fetch.
 
     inserted = 0
     charts = 0
     problems = []
+    consecutive_failures = 0
 
     with client() as http:
         for _apple_cc, cc, _name in MARKETS:
             for ctype in SPOTIFY_CHART_TYPES:
                 url = CHART_URL.format(ctype=ctype, cc=cc)
+                polite_pause()
                 try:
                     payload = _get_json(http, url)
                     if not isinstance(payload, list):
@@ -86,16 +91,34 @@ def collect_spotify(db) -> CollectionRun:
                         ):
                             inserted += 1
                     charts += 1
+                    consecutive_failures = 0
                     db.commit()
                 except Exception as exc:  # noqa: BLE001
                     db.rollback()
+                    status_code = ""
                     snippet = ""
-                    try:
-                        snippet = http.get(url).text[:500]
-                    except Exception:
-                        pass
-                    problems.append(f"{cc}/{ctype}: {exc} :: {snippet}")
+                    resp = getattr(exc, "response", None)
+                    if resp is not None:
+                        status_code = f"HTTP {resp.status_code} "
+                        snippet = (resp.text or "")[:160]
+                    problems.append(
+                        f"{cc}/{ctype}: {status_code}{type(exc).__name__} "
+                        f"[{url}] :: {snippet}"
+                    )
+                    consecutive_failures += 1
+                    if consecutive_failures >= CIRCUIT_BREAK_AFTER:
+                        problems.append(
+                            f"CIRCUIT BREAKER: {consecutive_failures} consecutive "
+                            f"failures — aborting Spotify run early (blocked or down)."
+                        )
+                        break
+            else:
+                continue
+            break
 
+    # Re-fetch the run row: chart-level rollbacks above may have detached the
+    # original instance from the session. Fetch by id, then finalize.
+    run = db.get(CollectionRun, run_id)
     run.finished_at = datetime.utcnow()
     run.rows_inserted = inserted
     run.charts_collected = charts

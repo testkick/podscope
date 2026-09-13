@@ -1,6 +1,10 @@
-"""Shared helpers for collectors: HTTP client, slugging, idempotent upserts."""
+"""Shared helpers for collectors: HTTP client, slugging, idempotent upserts,
+polite pacing, and a circuit breaker for when we're clearly being blocked."""
 
+import os
 import re
+import time
+import random
 from datetime import date, datetime
 
 import httpx
@@ -10,16 +14,42 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db.models import Show, ChartSnapshot
 
+# A real browser UA. Datacenter requests with a thin/custom UA get bounced by
+# CDN edges; this looks like an ordinary client.
 USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 TIMEOUT = httpx.Timeout(20.0, connect=10.0)
 
+# Pacing: randomized gap between requests so a run doesn't look like a burst.
+# Tune via env without a redeploy. A ~2s mean over ~60 charts ≈ a 10-min run,
+# which is fine for data that only changes every 6 hours.
+REQUEST_DELAY_MIN = float(os.environ.get("REQUEST_DELAY_MIN", "1.0"))
+REQUEST_DELAY_MAX = float(os.environ.get("REQUEST_DELAY_MAX", "3.0"))
+
+# Circuit breaker: if this many requests fail in a row, we're almost certainly
+# blocked or the upstream is down. Stop hammering — retrying just deepens a block.
+CIRCUIT_BREAK_AFTER = int(os.environ.get("CIRCUIT_BREAK_AFTER", "6"))
+
+
+class UpstreamBlocked(Exception):
+    """Raised when consecutive failures trip the circuit breaker, so the
+    collector aborts the run early instead of grinding through doomed requests."""
+
+
+def polite_pause():
+    """Randomized delay between requests. Call once per chart fetch."""
+    time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
+
 
 def client() -> httpx.Client:
     return httpx.Client(
-        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
         timeout=TIMEOUT,
         follow_redirects=True,
     )
