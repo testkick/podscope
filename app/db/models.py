@@ -39,6 +39,11 @@ class Show(Base):
     # URL-safe slug for public pages, e.g. "the-daily-1200361736"
     slug: Mapped[str | None] = mapped_column(String(600), unique=True, index=True)
 
+    # Canonical RSS feed URL (from Podcast Index). Two shows with the same
+    # normalized feed_url are the same podcast across platforms — this is the
+    # merge key. Nullable until resolved.
+    feed_url: Mapped[str | None] = mapped_column(String(2048), index=True)
+
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
