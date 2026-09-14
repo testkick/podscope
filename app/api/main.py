@@ -149,3 +149,22 @@ def api_history(slug: str, platform: str, country: str, chart: str,
 @app.get("/api/stats")
 def api_stats(db: Session = Depends(get_session)):
     return Q.platform_stats(db)
+
+
+# ---------- TEMPORARY diagnostic endpoint ----------
+# Runs the reconciliation logic on-demand so we can see its output/errors
+# directly, since the standalone script ran silently with no visible effect.
+# Remove once the reconciliation issue is confirmed fixed.
+
+@app.get("/admin/reconcile")
+def admin_reconcile(limit: int = Query(8000), db: Session = Depends(get_session)):
+    from app.enrich.reconcile import resolve_feeds, merge_duplicates
+
+    resolve_result = resolve_feeds(db, limit=limit)
+    merge_result = merge_duplicates(db)
+
+    return {
+        "limit": limit,
+        "resolve_feeds": resolve_result,
+        "merge_duplicates": merge_result,
+    }
