@@ -61,14 +61,103 @@ def _clean_brand(raw: str) -> str:
     return b[:60]
 
 
+# Matches an explicit sponsor-list header, the dominant real format:
+#   "Thank you to our Sponsors: Mountain Dew, Draft Kings, Acorns & Talkspace"
+#   "This week's sponsors: X, Y and Z"   "Sponsored by: A, B, C"
+_SPONSOR_LIST_RE = re.compile(
+    r"(?:thank(?:s| you)?(?:\s+to)?(?:\s+our)?\s+sponsors?"
+    r"|this (?:week'?s?|episode'?s?) sponsors?"
+    r"|sponsored by|brought to you by|our sponsors?|sponsors?)\s*[:\-]\s*"
+    r"([^\n\r]{3,240})",
+    re.I,
+)
+
+# Split a brand list on commas, ampersands, "and", slashes.
+_LIST_SPLIT_RE = re.compile(r"\s*(?:,|&|/|\band\b)\s*", re.I)
+
+# Words that signal the sponsor list has ended (so we don't swallow trailing prose)
+_LIST_STOPWORDS = ("http", "www.", "youtube", "subscribe", "merch", "instagram",
+                    "twitter", "tickets", "patreon", "•")
+
+
+def _extract_brand_details(text: str, brand: str) -> tuple[str | None, str | None]:
+    """Find a promo code and URL in the brand's OWN detail bullet. Bullets look
+    like 'Brand: ....' — we take the text from this brand's bullet up to the next
+    bullet (next 'Word:' or newline), so brands don't steal each other's codes."""
+    # find the brand's detail bullet: "Brand:" (not the header-list mention)
+    m = re.search(re.escape(brand) + r"\s*[:*]", text)
+    start = m.end() if m else text.lower().find(brand.lower())
+    if start == -1:
+        return None, None
+    # bullet ends at the next "Capitalized Word:" bullet or double-space/newline
+    rest = text[start: start + 400]
+    end_m = re.search(r"\s{2,}[A-Z][A-Za-z ]{2,20}\s*[:*]", rest)
+    window = rest[: end_m.start()] if end_m else rest
+
+    code_m = _CODE_RE.search(window)
+    url = None
+    for um in _URL_RE.finditer(window):
+        host = um.group(1).lower().split("/")[0]
+        if host not in _URL_STOP and "." in host:
+            url = um.group(1)
+            break
+    return (code_m.group(1) if code_m else None), url
+
+
+def detect_sponsor_list(text: str) -> list[dict]:
+    """Parse the explicit 'Sponsors: A, B, C' header format."""
+    out = {}
+    for m in _SPONSOR_LIST_RE.finditer(text):
+        raw_list = m.group(1)
+        # The list ends where the per-brand detail bullets begin. Cut at the
+        # first "  Word:" bullet, or at the first stopword (URLs/socials), or at
+        # a period — whichever comes first — so the last list item doesn't merge
+        # with the following sentence.
+        low = raw_list.lower()
+        cut = len(raw_list)
+        bullet = re.search(r"\s{2,}[A-Z][A-Za-z ]{2,20}\s*[:*]", raw_list)
+        if bullet:
+            cut = min(cut, bullet.start())
+        for sw in _LIST_STOPWORDS:
+            p = low.find(sw)
+            if p != -1:
+                cut = min(cut, p)
+        dot = raw_list.find(". ")
+        if dot != -1:
+            cut = min(cut, dot)
+        raw_list = raw_list[:cut]
+
+        for piece in _LIST_SPLIT_RE.split(raw_list):
+            brand = _clean_brand(piece)
+            if len(brand) < 2 or _norm(brand) in ("the", "our", "us", "me"):
+                continue
+            code, url = _extract_brand_details(text, brand)
+            out[_norm(brand)] = {
+                "brand": brand,
+                "brand_norm": _norm(brand),
+                "promo_code": code,
+                "promo_url": url,
+                "deal_type": "host_read",
+                "confidence": "high" if (code or url) else "med",
+                "evidence": m.group(0)[:240],
+            }
+    return list(out.values())
+
+
 def detect_rule_based(text: str) -> list[dict]:
     found: dict[str, dict] = {}
+    # 1) explicit sponsor-list header (dominant real format)
+    for d in detect_sponsor_list(text):
+        found[d["brand_norm"]] = d
+    # 2) inline "brought to you by X" style single reads
     for pat in _READ_PATTERNS:
         for m in re.finditer(pat, text, flags=re.I):
             brand = _clean_brand(m.group(1))
             if len(brand) < 2:
                 continue
             key = _norm(brand)
+            if key in found:
+                continue
             window = text[max(0, m.start() - 40): m.end() + 160]
             code_m = _CODE_RE.search(window)
             url = None

@@ -21,13 +21,18 @@ import json
 from collections import Counter
 
 _GUEST_TITLE = [
-    r"\bwith\s+[A-Z][a-z]+\s+[A-Z][a-z]+",     # "with Jane Smith"
-    r"\bft\.?\s+[A-Z]",                          # "ft. Jane"
-    r"\bfeat\.?\s+[A-Z]",
+    r"\bw/\s*[A-Z]",                              # "w/ Stavros Halkias" (most common!)
+    r"\bwith\s+[A-Z][a-z]+",                      # "with Adam Ray"
+    r"\bft\.?\s+[A-Z]",                            # "ft. Jane"
+    r"\bfeat\.?\s+[A-Z]",                          # "feat. Jane"
+    r"\bfeaturing\s+[A-Z]",
+    r"\bguest[:\s]",                              # "Guest: ...", "guest "
     r"\binterview\b",
     r"\bconversation with\b",
-    r"\bmy chat with\b",
-    r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\s+on\b",      # "Jane Smith on ..."
+    r"\b(?:my|our)\s+chat with\b",
+    r"\bsits?\s+down\s+with\b",                   # "sits down with"
+    r"\bjoins?\s+(?:the|us|me)\b",                # "X joins the show"
+    r"\b[A-Z][a-z]+\s+[A-Z][a-z]+\s+on\b",       # "Jane Smith on ..."
 ]
 _GUEST_RE = re.compile("|".join(_GUEST_TITLE))
 
