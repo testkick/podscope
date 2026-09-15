@@ -63,10 +63,14 @@ def analyze_guest_rules(episodes: list[dict]) -> dict:
             if re.search(rf"\b{re.escape(w)}\b", low):
                 words[w] += 1
     ratio = hits / len(episodes)
+    freq = _freq_label(ratio)
     topics = ", ".join(w for w, _ in words.most_common(6))
     return {
-        "books_guests": hits >= max(2, len(episodes) * 0.2),
-        "guest_frequency": _freq_label(ratio),
+        # Consistent with frequency: a show that's "often"/"every" books guests.
+        # (A separate threshold previously could report "often" while also saying
+        # books_guests=False — contradictory on small samples.)
+        "books_guests": freq in ("every", "often") or hits >= 2,
+        "guest_frequency": freq,
         "topics": topics,
         "format_note": f"{hits} of {len(episodes)} recent episodes look guest-driven",
     }

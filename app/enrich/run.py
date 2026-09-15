@@ -29,11 +29,30 @@ MAX_JOBS_PER_RUN = int(os.environ.get("ENRICH_MAX_JOBS", "25"))
 
 
 def resolve_feed_url(show: Show) -> str | None:
-    """Where the RSS feed lives. MVP: read from Podcast Index by itunes id if a
-    key is set; otherwise rely on a feed_url stashed on the show elsewhere.
-    For the module test we inject feed URLs directly, so this can return None."""
-    # Hook point: Podcast Index /podcasts/byitunesid lookup goes here.
-    return getattr(show, "_feed_url_override", None)
+    """Where the RSS feed lives. Part 1 (reconcile) populated Show.feed_url for
+    the whole catalog, so that's the primary source. Fall back to a live Podcast
+    Index lookup only if a show somehow lacks a stored feed (e.g. added since the
+    last reconcile run). A test override still wins for unit tests.
+    """
+    override = getattr(show, "_feed_url_override", None)
+    if override:
+        return override
+    if show.feed_url:
+        return show.feed_url
+    # Fallback: resolve on the fly (same logic reconcile uses).
+    try:
+        from app.enrich.podcastindex import resolve_by_itunes_id, search_feed
+        info = None
+        if show.apple_id:
+            info = resolve_by_itunes_id(show.apple_id)
+        if info is None and show.spotify_id:
+            info = search_feed(show.name, show.publisher)
+        if info and info.get("feed_url"):
+            show.feed_url = info["feed_url"]  # cache it for next time
+            return show.feed_url
+    except Exception:
+        pass
+    return None
 
 
 def _upsert_episode(db, show_id, ep) -> Episode:
@@ -120,13 +139,19 @@ def process_job(db, job: EnrichJob, feed_url: str | None = None) -> str:
 
 
 def auto_queue(db, top_n: int = 100):
-    """Enroll top charting shows for both extractors if not already queued."""
+    """Enroll top charting shows for both extractors if not already queued.
+    Prefers shows that already have a feed_url (from Part 1 reconcile) — no point
+    queuing a show the enricher can't fetch episodes for."""
     latest = db.scalar(select(func.max(ChartSnapshot.captured_date)))
     if not latest:
         return 0
     show_ids = db.scalars(
         select(ChartSnapshot.show_id)
-        .where(ChartSnapshot.captured_date == latest)
+        .join(Show, Show.id == ChartSnapshot.show_id)
+        .where(
+            ChartSnapshot.captured_date == latest,
+            Show.feed_url.is_not(None),   # only shows we can actually enrich
+        )
         .group_by(ChartSnapshot.show_id)
         .order_by(func.min(ChartSnapshot.rank))
         .limit(top_n)
@@ -148,38 +173,86 @@ def run_pending(db, limit=MAX_JOBS_PER_RUN):
         select(EnrichJob).where(EnrichJob.status == "pending").limit(limit)
     ).all()
     done = 0
+    failed = 0
+    consecutive_failures = 0
+    # If the first several jobs ALL fail, something systemic is wrong (bad feeds,
+    # no network, dependency missing) — abort loudly instead of grinding through
+    # the whole batch. Lesson from the silent reconcile auth failure.
+    CIRCUIT_BREAK_AFTER = int(os.environ.get("ENRICH_CIRCUIT_BREAK", "8"))
+
     for job in jobs:
         job.status = "running"
         job.attempts += 1
         db.commit()
         try:
             result = process_job(db, job)
-            job.status = "done" if not result.startswith("no_feed") else "error"
-            job.last_error = None if job.status == "done" else result
+            ok = not result.startswith("no_feed")
+            job.status = "done" if ok else "error"
+            job.last_error = None if ok else result
             job.finished_at = datetime.utcnow()
             db.commit()
             print(f"[enrich] show={job.show_id} kind={job.kind} -> {result}")
-            done += 1
+            if ok:
+                done += 1
+                consecutive_failures = 0
+            else:
+                failed += 1
+                consecutive_failures += 1
         except Exception as exc:  # noqa: BLE001
             db.rollback()
             job.status = "error"
             job.last_error = str(exc)[:1000]
             db.commit()
             print(f"[enrich] show={job.show_id} kind={job.kind} ERROR {exc}")
-    return done
+            failed += 1
+            consecutive_failures += 1
+
+        if consecutive_failures >= CIRCUIT_BREAK_AFTER:
+            print(f"[enrich] CIRCUIT BREAKER: {consecutive_failures} consecutive "
+                  f"failures — aborting run (systemic problem, not per-show).")
+            break
+
+    return {"done": done, "failed": failed}
 
 
-def main():
+def auto_queue_one(db, slug: str) -> int:
+    """Queue both extractors for a single show by slug — for proving the pipeline
+    on one known show (e.g. Bad Friends) before running the whole catalog."""
+    show = db.scalar(select(Show).where(Show.slug == slug))
+    if not show:
+        print(f"[enrich] no show with slug {slug!r}")
+        return 0
+    added = 0
+    for kind in ("sponsors", "guest"):
+        exists = db.scalar(select(EnrichJob).where(
+            EnrichJob.show_id == show.id, EnrichJob.kind == kind))
+        if not exists:
+            db.add(EnrichJob(show_id=show.id, kind=kind, status="pending"))
+            added += 1
+    db.commit()
+    return added
+
+
+def main(slug: str | None = None):
     init_db()
     db = SessionLocal()
     try:
-        queued = auto_queue(db)
-        print(f"[enrich] auto-queued {queued} new jobs")
-        done = run_pending(db)
-        print(f"[enrich] processed {done} jobs")
+        if slug:
+            queued = auto_queue_one(db, slug)
+            print(f"[enrich] queued {queued} jobs for {slug}")
+        else:
+            queued = auto_queue(db)
+            print(f"[enrich] auto-queued {queued} new jobs")
+        result = run_pending(db)
+        print(f"[enrich] processed: done={result['done']} failed={result['failed']}")
     finally:
         db.close()
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    # Optional: `python -m app.enrich.run --show <slug>` to enrich one show.
+    slug_arg = None
+    if len(sys.argv) > 2 and sys.argv[1] == "--show":
+        slug_arg = sys.argv[2]
+    main(slug=slug_arg)

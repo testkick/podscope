@@ -116,30 +116,73 @@ def _absorb_metadata(db, survivor: Show, loser: Show):
 
 
 def _repoint_children(db, survivor_id: int, loser_id: int):
-    # chart snapshots
-    db.execute(
-        update(ChartSnapshot)
-        .where(ChartSnapshot.show_id == loser_id)
-        .values(show_id=survivor_id)
-    )
-    # enrich FK tables
-    for tbl in _ENRICH_TABLES:
+    # chart snapshots — must respect uq_snapshot_daily
+    # (show_id, platform, country, chart, captured_date). Both shows may already
+    # hold a row for the same slot (each was collected separately before merge),
+    # so a blind UPDATE collides. Strategy: delete the loser's snapshots that
+    # would duplicate one the survivor already has (redundant — survivor has the
+    # data), then move the rest.
+    survivor_keys = set(
         db.execute(
-            update(tbl).where(tbl.show_id == loser_id)
-            .values(show_id=survivor_id)
-        )
+            select(
+                ChartSnapshot.platform, ChartSnapshot.country,
+                ChartSnapshot.chart, ChartSnapshot.captured_date,
+            ).where(ChartSnapshot.show_id == survivor_id)
+        ).all()
+    )
+    loser_snaps = db.scalars(
+        select(ChartSnapshot).where(ChartSnapshot.show_id == loser_id)
+    ).all()
+    for snap in loser_snaps:
+        key = (snap.platform, snap.country, snap.chart, snap.captured_date)
+        if key in survivor_keys:
+            db.delete(snap)          # survivor already has this slot; drop dup
+        else:
+            snap.show_id = survivor_id
+            survivor_keys.add(key)   # guard against dups within the loser set too
+    db.flush()
+
+    # enrich FK tables. Episodes have their own uq (show_id, guid); dedupe the
+    # same way. DetectedDeal/EnrichJob also have per-show unique constraints, so
+    # move-or-drop rather than blind update.
+    _repoint_enrich(db, survivor_id, loser_id)
+
     # guest profile: show_id is the PK, so move it only if survivor lacks one
     if _GUEST is not None:
         surv = db.get(_GUEST, survivor_id)
         lose = db.get(_GUEST, loser_id)
         if lose is not None:
             if surv is None:
-                db.execute(
-                    update(_GUEST).where(_GUEST.show_id == loser_id)
-                    .values(show_id=survivor_id)
-                )
+                lose.show_id = survivor_id
             else:
                 db.delete(lose)  # survivor already has one; drop the duplicate
+    db.flush()
+
+
+def _repoint_enrich(db, survivor_id: int, loser_id: int):
+    """Move enrich-table rows, dropping any that would violate a per-show unique
+    constraint the survivor already satisfies."""
+    for tbl in _ENRICH_TABLES:
+        # Determine the unique 'business key' per table to dedupe on.
+        rows = db.scalars(select(tbl).where(tbl.show_id == loser_id)).all()
+        for row in rows:
+            dup = None
+            if tbl.__name__ == "Episode":
+                dup = db.scalar(select(tbl).where(
+                    tbl.show_id == survivor_id, tbl.guid == row.guid))
+            elif tbl.__name__ == "DetectedDeal":
+                dup = db.scalar(select(tbl).where(
+                    tbl.show_id == survivor_id,
+                    tbl.episode_id == row.episode_id,
+                    tbl.brand_norm == row.brand_norm))
+            elif tbl.__name__ == "EnrichJob":
+                dup = db.scalar(select(tbl).where(
+                    tbl.show_id == survivor_id, tbl.kind == row.kind))
+            if dup is not None:
+                db.delete(row)
+            else:
+                row.show_id = survivor_id
+        db.flush()
 
 
 def merge_duplicates(db) -> dict:
