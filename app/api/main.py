@@ -4,6 +4,7 @@ Run:  uvicorn app.api.main:app --host 0.0.0.0 --port $PORT
 """
 
 from pathlib import Path
+import os
 
 from fastapi import FastAPI, Depends, Request, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -25,6 +26,27 @@ app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
 @app.on_event("startup")
 def _startup():
     init_db()  # idempotent; ensures tables exist on first web boot
+    # Opt-in: set REDETECT_ON_STARTUP=1 to re-run detection over cached text
+    # after a deploy, so detector improvements cascade to every show with no
+    # manual step. Runs in a background thread so it never blocks web startup.
+    # It only re-reads stored text (no fetching), so it's cheap and safe.
+    if os.environ.get("REDETECT_ON_STARTUP", "").lower() in ("1", "true", "yes"):
+        import threading
+
+        def _bg():
+            try:
+                from app.db.session import SessionLocal
+                from app.enrich.redetect import redetect_all
+                db = SessionLocal()
+                try:
+                    stats = redetect_all(db)
+                    print(f"[startup redetect] {stats}")
+                finally:
+                    db.close()
+            except Exception as exc:  # never let this crash the app
+                print(f"[startup redetect] skipped: {exc}")
+
+        threading.Thread(target=_bg, daemon=True).start()
 
 
 @app.get("/health")
