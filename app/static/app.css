@@ -125,3 +125,24 @@ footer.site{border-top:1px solid var(--line);margin-top:60px;padding:24px 0;colo
 .contact-gate{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);font-size:14px}
 .contact-gate strong{color:var(--ink)}
 .contact-gate span{color:var(--muted)}
+
+/* PodScope Score badge (show page) --------------------------- */
+.show-head{position:relative}
+.pods-score{margin-left:auto;text-align:center;border:2px solid var(--signal);
+  border-radius:14px;padding:10px 16px;background:#fff;min-width:96px}
+.pods-score .ps-num{font-size:38px;font-weight:800;line-height:1;color:var(--signal);letter-spacing:-.02em}
+.pods-score .ps-label{font-size:11px;font-weight:700;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.04em}
+.ps-up{color:var(--up)}
+.ps-down{color:var(--down)}
+
+/* PodScope Top Chart leaderboard (home) ---------------------- */
+.leaderboard{list-style:none;padding:0;margin:0;counter-reset:none}
+.leaderboard li{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--line)}
+.lb-pos{width:34px;text-align:right;font-weight:800;font-size:18px;color:var(--muted);font-variant-numeric:tabular-nums}
+.leaderboard img{width:44px;height:44px;border-radius:8px;border:1px solid var(--line)}
+.lb-info{flex:1;min-width:0}
+.lb-name{font-weight:700;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-pub{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-score{font-weight:800;font-size:22px;color:var(--signal);font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
+.lb-score em{font-size:12px;font-style:normal;margin-left:2px}
+@media (max-width:600px){.lb-pub{display:none}}

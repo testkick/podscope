@@ -3,6 +3,7 @@
 from app.db.models import Base
 # Importing enrich_models registers its tables on the shared Base metadata.
 from app.db import enrich_models  # noqa: F401
+# PodScopeScore, ScoreHistory live in models.py (already imported via Base)
 from app.db.session import engine
 
 

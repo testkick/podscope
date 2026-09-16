@@ -78,8 +78,9 @@ def status_page(request: Request, db: Session = Depends(get_session)):
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, db: Session = Depends(get_session)):
     stats = Q.platform_stats(db)
+    top = Q.top_scored_shows(db, limit=50)
     return templates.TemplateResponse(
-        "home.html", {"request": request, "stats": stats}
+        "home.html", {"request": request, "stats": stats, "top": top}
     )
 
 
@@ -108,12 +109,13 @@ def show_page(slug: str, request: Request, db: Session = Depends(get_session)):
     deals = Q.show_deals(db, show.id)
     brands = Q.show_brands(db, show.id)
     guest = Q.show_guest_profile(db, show.id)
+    score = Q.show_score(db, show.id)
     return templates.TemplateResponse(
         "show.html",
         {
             "request": request, "show": show, "positions": positions,
             "geo": geo, "trend": trend, "trend_label": trend_label,
-            "deals": deals, "brands": brands, "guest": guest,
+            "deals": deals, "brands": brands, "guest": guest, "score": score,
         },
     )
 

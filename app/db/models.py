@@ -16,7 +16,7 @@ Design notes:
 from datetime import datetime, date
 
 from sqlalchemy import (
-    String, Integer, Date, DateTime, ForeignKey, UniqueConstraint, Index, Text,
+    String, Integer, Float, Date, DateTime, ForeignKey, UniqueConstraint, Index, Text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -88,3 +88,33 @@ class CollectionRun(Base):
     rows_inserted: Mapped[int] = mapped_column(Integer, default=0)
     charts_collected: Mapped[int] = mapped_column(Integer, default=0)
     notes: Mapped[str | None] = mapped_column(Text)
+
+
+class PodScopeScore(Base):
+    """The proprietary PodScope Score: one row per show, recomputed on a schedule.
+    0-100, 7-day smoothed. Stored (not computed on page load) so the front-page
+    leaderboard can sort millions of rows cheaply and the number is stable within
+    a compute cycle. `components` holds the sub-scores as JSON for transparency
+    on the show page ('based on cross-market rank, trajectory, consensus...')."""
+    __tablename__ = "podscope_scores"
+
+    show_id: Mapped[int] = mapped_column(ForeignKey("shows.id"), primary_key=True)
+    score: Mapped[float] = mapped_column(Float, index=True)          # 0-100 smoothed
+    raw_score: Mapped[float] = mapped_column(Float)                  # today's unsmoothed
+    trend: Mapped[str | None] = mapped_column(String(8))            # up|down|flat
+    components: Mapped[str | None] = mapped_column(Text)            # JSON sub-scores
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ScoreHistory(Base):
+    """Daily score per show, so smoothing has a window to average over and the
+    show page can draw a score trend. Small: one row per scored show per day."""
+    __tablename__ = "score_history"
+    __table_args__ = (
+        UniqueConstraint("show_id", "captured_date", name="uq_score_daily"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    show_id: Mapped[int] = mapped_column(ForeignKey("shows.id"), index=True)
+    raw_score: Mapped[float] = mapped_column(Float)
+    captured_date: Mapped[date] = mapped_column(Date, default=date.today, index=True)

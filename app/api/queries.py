@@ -204,3 +204,48 @@ def collector_health(db):
     else:
         out["overall"] = "down"
     return out
+
+
+# ---------- PodScope Score ----------
+import json as _json  # noqa: E402
+from app.db.models import PodScopeScore, ScoreHistory  # noqa: E402
+
+
+def show_score(db, show_id: int):
+    row = db.get(PodScopeScore, show_id)
+    if not row:
+        return None
+    comps = {}
+    if row.components:
+        try:
+            comps = _json.loads(row.components)
+        except Exception:
+            comps = {}
+    return {
+        "score": row.score,
+        "trend": row.trend,
+        "components": comps,
+        "computed_at": row.computed_at.isoformat() if row.computed_at else None,
+    }
+
+
+def top_scored_shows(db, limit: int = 100):
+    """The PodScope Top Chart — shows ranked by our score. Powers the homepage."""
+    stmt = (
+        select(Show, PodScopeScore)
+        .join(PodScopeScore, PodScopeScore.show_id == Show.id)
+        .order_by(PodScopeScore.score.desc())
+        .limit(limit)
+    )
+    out = []
+    for pos, (show, score) in enumerate(db.execute(stmt), start=1):
+        out.append({
+            "position": pos,
+            "slug": show.slug,
+            "name": show.name,
+            "publisher": show.publisher,
+            "artwork_url": show.artwork_url,
+            "score": score.score,
+            "trend": score.trend,
+        })
+    return out

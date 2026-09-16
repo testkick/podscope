@@ -9,6 +9,15 @@
     <h1>{{ show.name }}</h1>
     {% if show.publisher %}<div class="pub">{{ show.publisher }}</div>{% endif %}
   </div>
+  {% if score %}
+  <div class="pods-score" title="PodScope Score — our 0–100 measure of a show's cross-market chart strength, momentum and reach">
+    <div class="ps-num">{{ score.score|round|int }}</div>
+    <div class="ps-label">PodScope Score
+      {% if score.trend == 'up' %}<span class="ps-up">▲</span>
+      {% elif score.trend == 'down' %}<span class="ps-down">▼</span>{% endif %}
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 {% if positions %}

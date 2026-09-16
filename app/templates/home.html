@@ -27,4 +27,26 @@
   markets where it charts. The longer PodScope runs, the deeper the history —
   data that can't be backfilled after the fact.
 </p>
+
+{% if top %}
+<h2 class="sec" style="margin-top:48px">The PodScope Top Chart</h2>
+<p style="color:var(--muted);max-width:60ch;margin:-4px 0 18px">
+  Ranked by <strong>PodScope Score</strong> — our 0–100 measure fusing
+  cross-market chart strength, momentum, cross-platform consensus and durability.
+  One number, across Apple and Spotify, that you won't find anywhere else.
+</p>
+<ol class="leaderboard">
+  {% for s in top %}
+  <li>
+    <span class="lb-pos">{{ s.position }}</span>
+    {% if s.artwork_url %}<img src="{{ s.artwork_url }}" alt="">{% endif %}
+    <div class="lb-info">
+      <a class="lb-name" href="/show/{{ s.slug }}">{{ s.name }}</a>
+      {% if s.publisher %}<div class="lb-pub">{{ s.publisher }}</div>{% endif %}
+    </div>
+    <span class="lb-score">{{ s.score|round|int }}{% if s.trend == 'up' %}<em class="ps-up">▲</em>{% elif s.trend == 'down' %}<em class="ps-down">▼</em>{% endif %}</span>
+  </li>
+  {% endfor %}
+</ol>
+{% endif %}
 {% endblock %}
