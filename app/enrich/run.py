@@ -138,10 +138,15 @@ def process_job(db, job: EnrichJob, feed_url: str | None = None) -> str:
     return "unknown_kind"
 
 
-def auto_queue(db, top_n: int = 100):
-    """Enroll top charting shows for both extractors if not already queued.
+def auto_queue(db, top_n: int | None = None):
+    """Enroll charting shows for both extractors if not already queued.
     Prefers shows that already have a feed_url (from Part 1 reconcile) — no point
-    queuing a show the enricher can't fetch episodes for."""
+    queuing a show the enricher can't fetch episodes for. With top_n=None it
+    enrolls the ENTIRE eligible catalog (ordered best-rank first), so a cron
+    steadily works through everyone; the per-run cap (ENRICH_MAX_JOBS) controls
+    how many actually get fetched each run."""
+    if top_n is None:
+        top_n = int(os.environ.get("ENRICH_QUEUE_LIMIT", "10000"))
     latest = db.scalar(select(func.max(ChartSnapshot.captured_date)))
     if not latest:
         return 0
@@ -169,6 +174,8 @@ def auto_queue(db, top_n: int = 100):
 
 
 def run_pending(db, limit=MAX_JOBS_PER_RUN):
+    import time
+    import random
     jobs = db.scalars(
         select(EnrichJob).where(EnrichJob.status == "pending").limit(limit)
     ).all()
@@ -179,8 +186,13 @@ def run_pending(db, limit=MAX_JOBS_PER_RUN):
     # no network, dependency missing) — abort loudly instead of grinding through
     # the whole batch. Lesson from the silent reconcile auth failure.
     CIRCUIT_BREAK_AFTER = int(os.environ.get("ENRICH_CIRCUIT_BREAK", "8"))
+    # Polite gap between shows so a catalog cron doesn't hammer feed hosts.
+    DELAY_MIN = float(os.environ.get("ENRICH_DELAY_MIN", "0.5"))
+    DELAY_MAX = float(os.environ.get("ENRICH_DELAY_MAX", "2.0"))
 
-    for job in jobs:
+    for i, job in enumerate(jobs):
+        if i > 0:
+            time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
         job.status = "running"
         job.attempts += 1
         db.commit()
