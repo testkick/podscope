@@ -92,6 +92,24 @@ def search(request: Request, q: str = "", db: Session = Depends(get_session)):
     )
 
 
+@app.get("/guests", response_class=HTMLResponse)
+def guest_match_page(request: Request, q: str = "", audience: str = "",
+                     db: Session = Depends(get_session)):
+    from app.match.guest_match import match_guests
+    results = match_guests(db, q, audience) if q else []
+    return templates.TemplateResponse(
+        "guests.html",
+        {"request": request, "q": q, "audience": audience, "results": results},
+    )
+
+
+@app.get("/api/guests")
+def api_guest_match(q: str = Query(...), audience: str = "",
+                    db: Session = Depends(get_session)):
+    from app.match.guest_match import match_guests
+    return match_guests(db, q, audience)
+
+
 @app.get("/show/{slug}", response_class=HTMLResponse)
 def show_page(slug: str, request: Request, db: Session = Depends(get_session)):
     show = Q.get_show_by_slug(db, slug)

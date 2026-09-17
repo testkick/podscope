@@ -30,6 +30,11 @@ def migrate() -> list[str]:
             conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_shows_feed_url ON shows (feed_url)"))
         applied.append("shows.feed_url")
+    # add guest_profiles.recent_guests if missing
+    if not _column_exists("guest_profiles", "recent_guests"):
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE guest_profiles ADD COLUMN recent_guests TEXT"))
+        applied.append("guest_profiles.recent_guests")
     return applied
 
 

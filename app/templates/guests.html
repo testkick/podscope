@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Find podcasts to guest on — PodScope{% endblock %}
+{% block meta_desc %}Describe your expertise and get a ranked list of podcasts that book guests, sized by reach, with booking contacts.{% endblock %}
+{% block content %}
+
+<section class="hero" style="margin-bottom:24px">
+  <h1 style="font-size:34px">Find the right podcasts to guest on.</h1>
+  <p>Describe what you talk about and who you want to reach. PodScope ranks shows
+     that actually book guests — by topical fit and real cross-market reach.</p>
+</section>
+
+<form class="guest-form" action="/guests" method="get">
+  <label>What do you talk about?
+    <input name="q" value="{{ q|e }}" placeholder="e.g. longevity, startups, behavioral psychology" autofocus>
+  </label>
+  <label>Who's your audience? <span class="opt">(optional)</span>
+    <input name="audience" value="{{ audience|e }}" placeholder="e.g. founders, health-conscious professionals">
+  </label>
+  <button type="submit">Find shows</button>
+</form>
+
+{% if q %}
+  <h2 class="sec" style="margin-top:36px">
+    {{ results|length }} guest-booking show{{ 's' if results|length != 1 }} matching “{{ q }}”
+  </h2>
+  {% if results %}
+  <ol class="matches">
+    {% for r in results %}
+    <li>
+      <span class="m-rank">{{ loop.index }}</span>
+      {% if r.artwork_url %}<img src="{{ r.artwork_url }}" alt="">{% endif %}
+      <div class="m-info">
+        <a class="m-name" href="/show/{{ r.slug }}">{{ r.name }}</a>
+        {% if r.publisher %}<span class="m-pub">{{ r.publisher }}</span>{% endif %}
+        <div class="m-why">{{ r.why }}</div>
+        <div class="m-contact">
+          {% if r.has_contact %}
+            <span class="lock">🔒 Booking contact available — unlock with PodScope Pro</span>
+          {% else %}
+            <span class="nocontact">No public booking contact found</span>
+          {% endif %}
+        </div>
+      </div>
+      <span class="m-score" title="Match score = topical fit × reach">{{ r.match_score|round|int }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="disclaimer">Ranked by topical fit against each show's covered topics and
+  recent guests, weighted by PodScope Score (cross-market reach). Booking contacts
+  are drawn from public podcast feed data.</p>
+  {% else %}
+  <p style="color:var(--muted)">No guest-booking shows matched that topic yet. Try
+  broader terms, or check back as more shows are analyzed.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -85,7 +85,7 @@ def redetect_guest(db, show: Show) -> bool:
         return False
     eps = [{"title": e.title or "", "description": e.description or ""}
            for e in episodes]
-    g = analyze_guest(show.name, eps)
+    g = analyze_guest(show.name, eps, publisher=show.publisher)
 
     prof = db.get(GuestProfile, show.id)
     if prof is None:
@@ -96,6 +96,7 @@ def redetect_guest(db, show: Show) -> bool:
     prof.topics = g.get("topics")
     prof.format_note = g.get("format_note")
     prof.suitability_note = g.get("suitability_note")
+    prof.recent_guests = g.get("recent_guests")
     # contact_email came from the feed at fetch time — keep whatever we stored.
     db.flush()
     return g["books_guests"]

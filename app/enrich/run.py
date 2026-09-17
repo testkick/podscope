@@ -120,7 +120,7 @@ def process_job(db, job: EnrichJob, feed_url: str | None = None) -> str:
     if job.kind == "guest":
         for ep in episodes:
             _upsert_episode(db, show.id, ep)
-        g = analyze_guest(show.name, episodes)
+        g = analyze_guest(show.name, episodes, publisher=show.publisher)
         prof = db.get(GuestProfile, show.id)
         if prof is None:
             prof = GuestProfile(show_id=show.id)
@@ -130,6 +130,7 @@ def process_job(db, job: EnrichJob, feed_url: str | None = None) -> str:
         prof.topics = g.get("topics")
         prof.format_note = g.get("format_note")
         prof.suitability_note = g.get("suitability_note")
+        prof.recent_guests = g.get("recent_guests")
         prof.contact_email = feed.get("owner_email")
         prof.updated_at = datetime.utcnow()
         db.flush()

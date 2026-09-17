@@ -146,3 +146,25 @@ footer.site{border-top:1px solid var(--line);margin-top:60px;padding:24px 0;colo
 .lb-score{font-weight:800;font-size:22px;color:var(--signal);font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
 .lb-score em{font-size:12px;font-style:normal;margin-left:2px}
 @media (max-width:600px){.lb-pub{display:none}}
+
+/* Guest-matching page ---------------------------------------- */
+.guest-form{display:flex;flex-direction:column;gap:14px;max-width:560px;
+  border:1px solid var(--line);border-radius:14px;padding:20px;background:#fff}
+.guest-form label{font-weight:600;font-size:14px;display:flex;flex-direction:column;gap:6px}
+.guest-form .opt{color:var(--muted);font-weight:400}
+.guest-form input{padding:10px 12px;border:1px solid var(--line);border-radius:8px;font:inherit}
+.guest-form button{align-self:flex-start;padding:10px 20px;border:0;border-radius:8px;
+  background:var(--signal);color:#fff;font:inherit;font-weight:700;cursor:pointer}
+
+.matches{list-style:none;padding:0;margin:0}
+.matches li{display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+.m-rank{width:28px;text-align:right;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums;padding-top:2px}
+.matches img{width:52px;height:52px;border-radius:8px;border:1px solid var(--line)}
+.m-info{flex:1;min-width:0}
+.m-name{font-weight:700;font-size:16px}
+.m-pub{color:var(--muted);font-size:13px;margin-left:8px}
+.m-why{font-size:14px;color:var(--ink);margin-top:3px}
+.m-contact{margin-top:6px;font-size:13px}
+.m-contact .lock{color:var(--signal);font-weight:600}
+.m-contact .nocontact{color:var(--muted)}
+.m-score{font-weight:800;font-size:22px;color:var(--signal);font-variant-numeric:tabular-nums;min-width:40px;text-align:right}

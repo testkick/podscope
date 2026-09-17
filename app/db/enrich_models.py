@@ -89,6 +89,7 @@ class GuestProfile(Base):
     format_note: Mapped[str | None] = mapped_column(String(512))
     contact_email: Mapped[str | None] = mapped_column(String(256))  # from RSS owner
     suitability_note: Mapped[str | None] = mapped_column(Text)
+    recent_guests: Mapped[str | None] = mapped_column(Text)  # comma-sep names detected
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
