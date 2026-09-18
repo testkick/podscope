@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}{{ show.name }} — chart rankings & audience markets | PodScope{% endblock %}
+{% block meta_desc %}{{ show.name }} podcast chart rankings across Apple and Spotify, by country and category, with historical trend and market footprint.{% endblock %}
+
+{% block content %}
+<div class="show-head">
+  {% if show.artwork_url %}<img src="{{ show.artwork_url }}" alt="{{ show.name }} artwork">{% endif %}
+  <div>
+    <h1>{{ show.name }}</h1>
+    {% if show.publisher %}<div class="pub">{{ show.publisher }}</div>{% endif %}
+  </div>
+  {% if score %}
+  <div class="pods-score" title="PodScope Score — our 0–100 measure of a show's cross-market chart strength, momentum and reach">
+    <div class="ps-num">{{ score.score|round|int }}</div>
+    <div class="ps-label">PodScope Score
+      {% if score.trend == 'up' %}<span class="ps-up">▲</span>
+      {% elif score.trend == 'down' %}<span class="ps-down">▼</span>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% if positions %}
+  {% set best = positions | sort(attribute='rank') | first %}
+  <div class="headline-rank">
+    <span class="hash">#</span>
+    <span class="big">{{ best.rank }}</span>
+    <span class="ctx">best current position<br>
+      {{ best.platform|title }} · {{ best.country|upper }} · {{ best.chart }}</span>
+  </div>
+
+  <div class="trend">
+    <h3>90-day trend — {{ trend_label }}</h3>
+    {% if trend and trend|length > 1 %}
+      {# Inline SVG line chart. Rank is inverted (lower rank = higher on chart). #}
+      {% set W = 900 %}{% set H = 160 %}{% set PAD = 8 %}
+      {% set ranks = trend | map(attribute='rank') | list %}
+      {% set rmin = ranks | min %}{% set rmax = ranks | max %}
+      {% set span = (rmax - rmin) if (rmax - rmin) > 0 else 1 %}
+      {% set n = trend | length %}
+      <svg viewBox="0 0 {{ W }} {{ H }}" preserveAspectRatio="none" role="img"
+           aria-label="Rank trend over the last 90 days">
+        <polyline fill="none" stroke="var(--signal)" stroke-width="2.5"
+          stroke-linejoin="round" stroke-linecap="round"
+          points="{% for p in trend %}{% set x = PAD + (loop.index0 * (W - 2*PAD) / (n-1)) %}{% set y = PAD + ((p.rank - rmin) * (H - 2*PAD) / span) %}{{ '%.1f'|format(x) }},{{ '%.1f'|format(y) }} {% endfor %}"/>
+        {# endpoint dot #}
+        {% set last = trend[-1] %}
+        {% set lx = W - PAD %}
+        {% set ly = PAD + ((last.rank - rmin) * (H - 2*PAD) / span) %}
+        <circle cx="{{ '%.1f'|format(lx) }}" cy="{{ '%.1f'|format(ly) }}" r="4" fill="var(--signal)"/>
+      </svg>
+      <div style="display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-top:6px">
+        <span>{{ trend[0].date }} · #{{ trend[0].rank }}</span>
+        <span>best #{{ rmin }} / worst #{{ rmax }}</span>
+        <span>{{ trend[-1].date }} · #{{ trend[-1].rank }}</span>
+      </div>
+    {% else %}
+      <div class="empty">Not enough history yet — trend appears once this show
+      has charted on more than one collection day.</div>
+    {% endif %}
+  </div>
+
+  <h2 class="sec">Current positions</h2>
+  <table class="data">
+    <thead><tr><th>Rank</th><th>Platform</th><th>Market</th><th>Chart</th></tr></thead>
+    <tbody>
+      {% for p in positions %}
+      <tr>
+        <td class="rank">{{ p.rank }}</td>
+        <td><span class="pill {{ p.platform }}">{{ p.platform|title }}</span></td>
+        <td class="cc">{{ p.country|upper }}</td>
+        <td>{{ p.chart }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2 class="sec">Market footprint</h2>
+  <div class="geo">
+    {% for m in geo %}
+    <div class="m">
+      <div class="cc">{{ m.country|upper }}</div>
+      <div class="r"><small>#</small>{{ m.best_rank }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if brands %}
+  <h2 class="sec">Sponsors detected</h2>
+  <div class="brands">
+    {% for b in brands %}
+    <span class="brand-tag">{{ b.brand }}<em>{{ b.count }} ep{{ 's' if b.count > 1 else '' }}</em></span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if deals %}
+  <h2 class="sec">Recent detected deals</h2>
+  <table class="data">
+    <thead><tr><th>Date</th><th>Brand</th><th>Type</th><th>Episode</th><th>Signal</th></tr></thead>
+    <tbody>
+      {% for d in deals %}
+      <tr>
+        <td class="cc" style="white-space:nowrap">{{ d.published or "—" }}</td>
+        <td style="font-weight:700">{{ d.brand }}
+          {% if d.promo_code %}<span class="code">code {{ d.promo_code }}</span>{% endif %}
+        </td>
+        <td><span class="dt dt-{{ d.deal_type }}">{{ d.deal_type|replace('_',' ') }}</span></td>
+        <td style="color:var(--muted);max-width:280px">{{ d.episode_title }}</td>
+        <td><span class="conf conf-{{ d.confidence }}">{{ d.confidence }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="disclaimer">Deals are deduced from episode transcripts and show notes —
+  evidence-based, not confirmed by the show or brand. “Signal” reflects how clearly
+  the text reads as a paid placement.</p>
+  {% endif %}
+
+  {% if guest %}
+  <h2 class="sec">Guest appearances</h2>
+  <div class="guest-box">
+    {% if guest.books_guests %}
+      <div class="guest-head">
+        <span class="yes">Books guests</span>
+        <span class="freq">{{ guest.guest_frequency }} episodes feature a guest</span>
+      </div>
+      {% if guest.suitability_note %}<p class="fit">{{ guest.suitability_note }}</p>{% endif %}
+      {% if guest.topics %}<p class="topics">Topics: {{ guest.topics }}</p>{% endif %}
+      {% if guest.format_note %}<p class="fmt">{{ guest.format_note }}</p>{% endif %}
+      <div class="contact-gate">
+        {% if guest.has_contact %}
+          <strong>Booking contact on file.</strong>
+          <span>Unlock the show’s contact email with PodScope Pro.</span>
+        {% else %}
+          <span>No public booking contact found in this show’s feed.</span>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="topics">This show doesn’t appear to regularly feature guests.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="paywall">
+    <h3>Audience geography &amp; channel matching</h3>
+    <p>Estimated listener reach by market, review-origin geography, and
+       product-to-show matching are part of PodScope Pro. This free page shows
+       public chart data; the paid layer turns it into a media plan.</p>
+  </div>
+{% else %}
+  <p style="color:var(--muted)">This show isn't charting in any tracked market
+  right now. Historical data will appear here if and when it enters a chart.</p>
+{% endif %}
+{% endblock %}

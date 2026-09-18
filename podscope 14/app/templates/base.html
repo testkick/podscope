@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}PodScope — podcast chart intelligence{% endblock %}</title>
+<meta name="description" content="{% block meta_desc %}Historical podcast chart rankings across Apple and Spotify, by country and category.{% endblock %}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+{% block head_extra %}{% endblock %}
+</head>
+<body>
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/">Pod<span>Scope</span></a>
+    <a href="/guests" style="font-weight:600;font-size:14px;margin-left:20px">Guest matching</a>
+    <form class="search" action="/search" method="get" role="search">
+      <input name="q" placeholder="Search a podcast…" value="{{ q|default('') }}" aria-label="Search podcasts">
+      <button type="submit">Search</button>
+    </form>
+  </div>
+</header>
+<main class="wrap">
+  {% block content %}{% endblock %}
+</main>
+<footer class="site">
+  <div class="wrap">
+    PodScope · chart data from public Apple &amp; Spotify feeds · rankings updated every 6 hours
+  </div>
+</footer>
+</body>
+</html>
