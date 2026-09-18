@@ -129,6 +129,18 @@ def _semantic_match(db, query: str, audience: str, limit: int,
     return results[:limit]
 
 
+def _reach_tier(podscore) -> str:
+    """Bucket a show by how hard it likely is to book on, using PodScope Score
+    as a reach proxy. The product insight: big shows only book famous people, so
+    a normal guest wants the reachable tiers. Labels are booking-oriented."""
+    s = podscore or 0
+    if s >= 80:
+        return "aspirational"   # top shows — book famous names only
+    if s >= 50:
+        return "realistic"      # mid-tier — genuinely bookable with a good pitch
+    return "easy_wins"          # smaller/emerging — most accessible
+
+
 def _row_to_result(slug, name, publisher, artwork, freq, topics, guests,
                    contact, podscore, sim):
     why_bits = []
@@ -136,20 +148,37 @@ def _row_to_result(slug, name, publisher, artwork, freq, topics, guests,
         why_bits.append("covers " + ", ".join(topics.split(",")[:3]).strip())
     if freq in ("every", "often"):
         why_bits.append(f"books guests {freq}")
-    if podscore:
-        why_bits.append(f"PodScope {int(round(podscore))}")
     return {
         "slug": slug, "name": name, "publisher": publisher,
         "artwork_url": artwork, "podscope_score": podscore,
         "guest_frequency": freq, "topics": topics,
         "why": " · ".join(why_bits) if why_bits else "guest-booking show",
         "has_contact": bool(contact),
+        "reach_tier": _reach_tier(podscore),
         "_sim": sim,
         "matched_terms": [],
     }
 
 
-def match_guests(db, query: str, audience: str = "", limit: int = 25,
+TIER_META = [
+    ("easy_wins", "Easy wins", "Smaller & emerging shows — most likely to say yes"),
+    ("realistic", "Realistic targets", "Mid-tier shows — bookable with a strong pitch"),
+    ("aspirational", "Aspirational", "Top shows — high reach, but usually book known names"),
+]
+
+
+def group_by_tier(results: list[dict]) -> list[dict]:
+    """Group ranked results into booking tiers, easy-wins first (that's what most
+    guests actually need). Each result keeps its match rank within its tier."""
+    out = []
+    for key, label, blurb in TIER_META:
+        rows = [r for r in results if r.get("reach_tier") == key]
+        if rows:
+            out.append({"key": key, "label": label, "blurb": blurb, "shows": rows})
+    return out
+
+
+def match_guests(db, query: str, audience: str = "", limit: int = 30,
                  min_fit: float = 0.15) -> list[dict]:
     """Rank guest-booking shows for the query. Uses SEMANTIC matching when
     embeddings are available (so 'venture capital' matches 'startup investing'),
@@ -203,6 +232,7 @@ def _keyword_match(db, query: str, audience: str, limit: int,
             "topics": gp.topics,
             "matched_terms": matched,
             "why": _why(matched, gp, score),
+            "reach_tier": _reach_tier(score.score if score else None),
             "has_contact": bool(gp.contact_email),
         })
 
@@ -217,6 +247,4 @@ def _why(matched: list[str], gp: GuestProfile, score) -> str:
         bits.append("covers " + ", ".join(matched[:4]))
     if gp.guest_frequency in ("every", "often"):
         bits.append(f"books guests {gp.guest_frequency}")
-    if score and score.score:
-        bits.append(f"PodScope {int(round(score.score))}")
     return " · ".join(bits) if bits else "guest-booking show"

@@ -23,31 +23,46 @@
   <h2 class="sec" style="margin-top:36px">
     {{ results|length }} guest-booking show{{ 's' if results|length != 1 }} matching “{{ q }}”
   </h2>
-  {% if results %}
-  <ol class="matches">
-    {% for r in results %}
-    <li>
-      <span class="m-rank">{{ loop.index }}</span>
-      {% if r.artwork_url %}<img src="{{ r.artwork_url }}" alt="">{% endif %}
-      <div class="m-info">
-        <a class="m-name" href="/show/{{ r.slug }}">{{ r.name }}</a>
-        {% if r.publisher %}<span class="m-pub">{{ r.publisher }}</span>{% endif %}
-        <div class="m-why">{{ r.why }}</div>
-        <div class="m-contact">
-          {% if r.has_contact %}
-            <span class="lock">🔒 Booking contact available — unlock with PodScope Pro</span>
-          {% else %}
-            <span class="nocontact">No public booking contact found</span>
-          {% endif %}
-        </div>
+  {% if tiers %}
+  <p style="color:var(--muted);max-width:62ch;margin:-4px 0 20px">
+    Grouped by how reachable each show is to book — big shows tend to book only
+    well-known names, so start with <strong>Easy wins</strong> and
+    <strong>Realistic targets</strong>.
+  </p>
+  {% for tier in tiers %}
+    <div class="tier">
+      <div class="tier-head">
+        <span class="tier-label tier-{{ tier.key }}">{{ tier.label }}</span>
+        <span class="tier-blurb">{{ tier.blurb }}</span>
       </div>
-      <span class="m-score" title="Match score = topical fit × reach">{{ r.match_score|round|int }}</span>
-    </li>
-    {% endfor %}
-  </ol>
-  <p class="disclaimer">Ranked by topical fit against each show's covered topics and
-  recent guests, weighted by PodScope Score (cross-market reach). Booking contacts
-  are drawn from public podcast feed data.</p>
+      <ol class="matches">
+        {% for r in tier.shows %}
+        <li>
+          {% if r.artwork_url %}<img src="{{ r.artwork_url }}" alt="">{% endif %}
+          <div class="m-info">
+            <a class="m-name" href="/show/{{ r.slug }}">{{ r.name }}</a>
+            {% if r.publisher %}<span class="m-pub">{{ r.publisher }}</span>{% endif %}
+            <div class="m-why">{{ r.why }}</div>
+            <div class="m-contact">
+              {% if r.has_contact %}
+                <span class="lock">🔒 Booking contact — unlock with PodScope Pro</span>
+              {% else %}
+                <span class="nocontact">No public booking contact found</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="m-metrics">
+            <div class="m-match"><span class="mm-num">{{ r.match_score|round|int }}</span><span class="mm-lab">match</span></div>
+            {% if r.podscope_score %}<div class="m-reach">PodScope {{ r.podscope_score|round|int }}</div>{% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+  {% endfor %}
+  <p class="disclaimer">“Match” is topical fit to your search. “PodScope” is the
+  show’s overall reach score (0–100) — higher means bigger audience but harder to
+  book. Booking contacts are drawn from public podcast feed data.</p>
   {% else %}
   <p style="color:var(--muted)">No guest-booking shows matched that topic yet. Try
   broader terms, or check back as more shows are analyzed.</p>

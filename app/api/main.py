@@ -95,11 +95,13 @@ def search(request: Request, q: str = "", db: Session = Depends(get_session)):
 @app.get("/guests", response_class=HTMLResponse)
 def guest_match_page(request: Request, q: str = "", audience: str = "",
                      db: Session = Depends(get_session)):
-    from app.match.guest_match import match_guests
+    from app.match.guest_match import match_guests, group_by_tier
     results = match_guests(db, q, audience) if q else []
+    tiers = group_by_tier(results) if results else []
     return templates.TemplateResponse(
         "guests.html",
-        {"request": request, "q": q, "audience": audience, "results": results},
+        {"request": request, "q": q, "audience": audience,
+         "results": results, "tiers": tiers},
     )
 
 

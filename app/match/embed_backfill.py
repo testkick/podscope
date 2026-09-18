@@ -31,11 +31,30 @@ BATCH = int(os.environ.get("EMBED_BATCH", "50"))
 MAX_PER_RUN = int(os.environ.get("EMBED_MAX", "1000"))
 
 
-def _profile_blob(show, gp) -> str:
+def _profile_blob(db, show, gp) -> str:
+    """Build the text we embed for semantic matching. The KEY to topic depth:
+    use what the show ACTUALLY discusses (recent episode titles + descriptions +
+    guest names) — not just the handful of generic category tags. This is what
+    lets 'CRISPR gene editing' or 'seed-stage fundraising' match a show that
+    covers those specifics, instead of only matching broad terms like 'science'."""
+    from app.db.enrich_models import Episode
     parts = [show.name, show.publisher]
     if gp:
-        parts += [gp.topics, gp.recent_guests, gp.suitability_note]
-    return " — ".join(p for p in parts if p)
+        parts += [gp.topics, gp.recent_guests]
+    # pull recent episode titles + descriptions — the real topical signal
+    eps = db.execute(
+        select(Episode.title, Episode.description)
+        .where(Episode.show_id == show.id)
+        .order_by(Episode.published.desc().nullslast())
+        .limit(15)
+    ).all()
+    for title, desc in eps:
+        if title:
+            parts.append(title)
+        if desc:
+            parts.append(desc[:400])   # cap per-episode so one long note can't dominate
+    blob = " — ".join(p for p in parts if p)
+    return blob[:8000]                 # overall cap for the embedding call
 
 
 def _has_pgvector(db) -> bool:
@@ -85,7 +104,7 @@ def backfill(db, all_shows=False, limit=MAX_PER_RUN, force=False) -> dict:
     # build work list, skipping unchanged unless force
     work = []
     for show, gp in rows:
-        blob = _profile_blob(show, gp)
+        blob = _profile_blob(db, show, gp)
         if not blob or len(blob) < 3:
             continue
         existing = db.get(ShowEmbedding, show.id)
