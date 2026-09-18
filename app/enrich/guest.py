@@ -43,12 +43,34 @@ _GUEST_RE = re.compile("|".join(_GUEST_TITLE))
 _NUM_NAME_RE = re.compile(
     r"^\s*(?:#|ep\.?\s*|episode\s*)?\d{1,5}\s*[-–—:]\s*([A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,2})\s*$"
 )
+# Mirror format: "#339 Christian Craighead - Topic..." — NUMBER, then the guest
+# NAME, then a dash, then the topic. (Shawn Ryan Show, many interview shows.)
+# The name is the part BEFORE the dash. Allow a leading honorific (Dr., Sen.,...).
+_NUM_NAME_TOPIC_RE = re.compile(
+    r"^\s*(?:#|ep\.?\s*|episode\s*)?\d{1,5}\s+"
+    r"((?:(?:Dr|Mr|Ms|Mrs|Sen|Rep|Gen|Col|Sgt|Lt|Capt|Fr|Rev|Sir)\.?\s+)?"
+    r"[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+){0,2})\s*[-–—]\s+\S"
+)
 # Recurring non-guest segment names that fit "#N - Words" but aren't people.
 _NOT_A_GUEST = {
     "fight companion", "protect our parks", "jre fight companion",
     "fight night", "q&a", "aftershow", "after show", "live", "compilation",
     "best of", "mailbag", "solo", "monologue", "news", "recap", "highlights",
 }
+
+
+def _looks_like_number_name_topic_guest(title: str) -> str | None:
+    """'#339 Christian Craighead - Topic' -> guest name, else None."""
+    m = _NUM_NAME_TOPIC_RE.match(title.strip())
+    if not m:
+        return None
+    name = m.group(1).strip()
+    low = name.lower()
+    if any(seg in low for seg in _NOT_A_GUEST):
+        return None
+    if low in _NOT_A_NAME_PREFIX or any(low.startswith(p) for p in _NOT_A_NAME_PREFIX):
+        return None
+    return name
 
 
 def _looks_like_number_name_guest(title: str) -> bool:
@@ -171,6 +193,10 @@ def analyze_guest_rules(episodes: list[dict], show_name: str = "",
         # Tier A: title patterns (highest precision)
         if _GUEST_RE.search(title) or _looks_like_number_name_guest(title):
             is_guest = True
+        num_name_topic = _looks_like_number_name_topic_guest(title)
+        if num_name_topic and _norm_name(num_name_topic) not in host_names:
+            is_guest = True
+            guest_names.append(num_name_topic)
         name_topic = _looks_like_name_topic_guest(title)
         if name_topic and _norm_name(name_topic) not in host_names:
             is_guest = True

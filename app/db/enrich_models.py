@@ -107,3 +107,17 @@ class EnrichJob(Base):
     last_error: Mapped[str | None] = mapped_column(Text)
     queued_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class ShowEmbedding(Base):
+    """Semantic embedding of a show's topic + recent-guest text, for meaning-based
+    matching. Vector stored as JSON text for portability (SQLite dev / Postgres
+    without pgvector); on Postgres with pgvector a real vector column + index is
+    added by migrate.py for fast similarity search. One row per show."""
+    __tablename__ = "show_embeddings"
+
+    show_id: Mapped[int] = mapped_column(ForeignKey("shows.id"), primary_key=True)
+    source_text: Mapped[str | None] = mapped_column(Text)   # what was embedded
+    vector_json: Mapped[str | None] = mapped_column(Text)   # portable fallback store
+    dim: Mapped[int | None] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

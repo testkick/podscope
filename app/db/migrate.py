@@ -6,6 +6,7 @@ Usage (once, or harmlessly on every deploy):
     python -m app.db.migrate
 """
 
+import os
 from sqlalchemy import inspect, text
 
 from app.db.session import engine
@@ -35,6 +36,26 @@ def migrate() -> list[str]:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE guest_profiles ADD COLUMN recent_guests TEXT"))
         applied.append("guest_profiles.recent_guests")
+
+    # pgvector: enable extension + add a real vector column on show_embeddings
+    # for fast semantic search. Postgres only; harmless to skip on SQLite (dev),
+    # where we fall back to the JSON vector store. All idempotent.
+    if engine.dialect.name == "postgresql":
+        dim = int(os.environ.get("EMBEDDINGS_DIM", "1536"))
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                if not _column_exists("show_embeddings", "embedding"):
+                    conn.execute(text(
+                        f"ALTER TABLE show_embeddings ADD COLUMN embedding vector({dim})"))
+                    applied.append("show_embeddings.embedding (pgvector)")
+                # cosine-distance index for fast nearest-neighbour search
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_show_emb_cos "
+                    "ON show_embeddings USING hnsw (embedding vector_cosine_ops)"))
+        except Exception as exc:
+            # pgvector not available on this instance — JSON fallback still works
+            applied.append(f"pgvector skipped ({type(exc).__name__})")
     return applied
 
 

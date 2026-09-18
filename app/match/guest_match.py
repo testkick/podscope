@@ -18,11 +18,14 @@ tie-breaker/amplifier.
 """
 
 import re
+import json
+import math
 
-from sqlalchemy import select
+from sqlalchemy import select, text as sqltext
 
 from app.db.models import Show, PodScopeScore
-from app.db.enrich_models import GuestProfile
+from app.db.enrich_models import GuestProfile, ShowEmbedding
+from app.match.embeddings import embed, embeddings_enabled, EMBED_DIM
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
 # generic words that shouldn't count as topical signal
@@ -46,11 +49,119 @@ def _fit_score(query_terms: set[str], show_blob_terms: set[str]) -> float:
     return hits / len(query_terms)
 
 
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def _semantic_match(db, query: str, audience: str, limit: int,
+                    min_sim: float) -> list[dict] | None:
+    """Meaning-based match: embed the query, rank guest-booking shows by cosine
+    similarity to their stored embedding. Returns None if embeddings aren't
+    available (caller falls back to keyword matching), so 'venture capital'
+    matches 'startup investing' shows by meaning, not exact words."""
+    if not embeddings_enabled():
+        return None
+    qvec = embed(f"{query}. Audience: {audience}" if audience else query)
+    if qvec is None:
+        return None
+
+    pg = db.bind.dialect.name == "postgresql"
+    results = []
+
+    if pg:
+        # fast path: pgvector cosine distance, DB-side ordering
+        try:
+            qlit = "[" + ",".join(str(x) for x in qvec) + "]"
+            rows = db.execute(sqltext("""
+                SELECT s.id, s.slug, s.name, s.publisher, s.artwork_url,
+                       gp.guest_frequency, gp.topics, gp.recent_guests,
+                       gp.contact_email, ps.score AS podscore,
+                       1 - (e.embedding <=> :qv) AS sim
+                FROM show_embeddings e
+                JOIN shows s ON s.id = e.show_id
+                JOIN guest_profiles gp ON gp.show_id = s.id
+                LEFT JOIN podscope_scores ps ON ps.show_id = s.id
+                WHERE gp.books_guests = true AND e.embedding IS NOT NULL
+                ORDER BY e.embedding <=> :qv
+                LIMIT :lim
+            """), {"qv": qlit, "lim": limit * 3}).all()
+            for r in rows:
+                sim = float(r.sim)
+                if sim < min_sim:
+                    continue
+                results.append(_row_to_result(
+                    r.slug, r.name, r.publisher, r.artwork_url, r.guest_frequency,
+                    r.topics, r.recent_guests, r.contact_email, r.podscore, sim))
+        except Exception:
+            return None
+    else:
+        # portable path: cosine over JSON-stored vectors (dev / no pgvector)
+        rows = db.execute(
+            select(Show, GuestProfile, PodScopeScore, ShowEmbedding)
+            .join(GuestProfile, GuestProfile.show_id == Show.id)
+            .join(ShowEmbedding, ShowEmbedding.show_id == Show.id)
+            .outerjoin(PodScopeScore, PodScopeScore.show_id == Show.id)
+            .where(GuestProfile.books_guests.is_(True))
+        ).all()
+        for show, gp, ps, emb in rows:
+            if not emb.vector_json:
+                continue
+            try:
+                vec = json.loads(emb.vector_json)
+            except Exception:
+                continue
+            sim = _cosine(qvec, vec)
+            if sim < min_sim:
+                continue
+            results.append(_row_to_result(
+                show.slug, show.name, show.publisher, show.artwork_url,
+                gp.guest_frequency, gp.topics, gp.recent_guests,
+                gp.contact_email, ps.score if ps else None, sim))
+
+    # blend semantic similarity with reach, same philosophy as keyword path
+    for r in results:
+        reach = (r["podscope_score"] or 0) / 100.0
+        r["match_score"] = round(100 * (0.7 * r["_sim"] + 0.3 * reach * (0.5 + 0.5 * r["_sim"])), 1)
+    results.sort(key=lambda r: r["match_score"], reverse=True)
+    return results[:limit]
+
+
+def _row_to_result(slug, name, publisher, artwork, freq, topics, guests,
+                   contact, podscore, sim):
+    why_bits = []
+    if topics:
+        why_bits.append("covers " + ", ".join(topics.split(",")[:3]).strip())
+    if freq in ("every", "often"):
+        why_bits.append(f"books guests {freq}")
+    if podscore:
+        why_bits.append(f"PodScope {int(round(podscore))}")
+    return {
+        "slug": slug, "name": name, "publisher": publisher,
+        "artwork_url": artwork, "podscope_score": podscore,
+        "guest_frequency": freq, "topics": topics,
+        "why": " · ".join(why_bits) if why_bits else "guest-booking show",
+        "has_contact": bool(contact),
+        "_sim": sim,
+        "matched_terms": [],
+    }
+
+
 def match_guests(db, query: str, audience: str = "", limit: int = 25,
                  min_fit: float = 0.15) -> list[dict]:
-    """Return ranked guest-booking shows for the query. Each row includes fit,
-    reach (score), why-it-fits, and whether a booking contact exists (the actual
-    email is gated for Pro later)."""
+    """Rank guest-booking shows for the query. Uses SEMANTIC matching when
+    embeddings are available (so 'venture capital' matches 'startup investing'),
+    and falls back to keyword overlap otherwise."""
+    semantic = _semantic_match(db, query, audience, limit, min_sim=0.25)
+    if semantic is not None:
+        return semantic
+    return _keyword_match(db, query, audience, limit, min_fit)
+
+
+def _keyword_match(db, query: str, audience: str, limit: int,
+                   min_fit: float) -> list[dict]:
     query_terms = _terms(f"{query} {audience}")
     if not query_terms:
         return []
