@@ -142,6 +142,26 @@
   </div>
   {% endif %}
 
+  {% if op3 %}
+  <h2 class="sec">Verified downloads
+    <span class="verified-tag">OP3 · real data</span>
+  </h2>
+  <div class="op3-grid">
+    {% if op3.recent_month %}
+    <div class="op3-stat"><div class="op3-n">{{ "{:,}".format(op3.recent_month) }}</div><div class="op3-k">downloads last month</div></div>
+    {% endif %}
+    {% if op3.monthly_avg %}
+    <div class="op3-stat"><div class="op3-n">{{ "{:,}".format(op3.monthly_avg) }}</div><div class="op3-k">monthly average</div></div>
+    {% endif %}
+    {% if op3.weekly_avg %}
+    <div class="op3-stat"><div class="op3-n">{{ "{:,}".format(op3.weekly_avg) }}</div><div class="op3-k">weekly average</div></div>
+    {% endif %}
+  </div>
+  <p class="disclaimer">Actual download counts from the Open Podcast Prefix Project
+  (OP3) — open, auditable, privacy-preserving. Available for shows that use the OP3
+  prefix; unlike our chart-based estimates, these are measured, not modeled.</p>
+  {% endif %}
+
   <div class="paywall">
     <h3>Audience geography &amp; channel matching</h3>
     <p>Estimated listener reach by market, review-origin geography, and

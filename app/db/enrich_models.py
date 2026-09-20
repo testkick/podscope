@@ -121,3 +121,19 @@ class ShowEmbedding(Base):
     vector_json: Mapped[str | None] = mapped_column(Text)   # portable fallback store
     dim: Mapped[int | None] = mapped_column(Integer)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OP3Metrics(Base):
+    """Real download data from OP3 for shows that use its prefix. Only a subset
+    of shows will have a row here (those measured by OP3) — that's expected.
+    This is the ground-truth set for verified reach + future calibration."""
+    __tablename__ = "op3_metrics"
+
+    show_id: Mapped[int] = mapped_column(ForeignKey("shows.id"), primary_key=True)
+    op3_show_uuid: Mapped[str | None] = mapped_column(String(64))
+    recent_month_downloads: Mapped[int | None] = mapped_column(Integer)
+    monthly_avg_downloads: Mapped[int | None] = mapped_column(Integer)
+    weekly_avg_downloads: Mapped[int | None] = mapped_column(Integer)
+    months_measured: Mapped[int | None] = mapped_column(Integer)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    measured: Mapped[bool] = mapped_column(Boolean, default=False)  # is it in OP3?

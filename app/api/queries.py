@@ -249,3 +249,19 @@ def top_scored_shows(db, limit: int = 100):
             "trend": score.trend,
         })
     return out
+
+
+# ---------- OP3 verified downloads ----------
+from app.db.enrich_models import OP3Metrics  # noqa: E402
+
+
+def show_op3(db, show_id: int):
+    row = db.get(OP3Metrics, show_id)
+    if not row or not row.measured:
+        return None
+    return {
+        "recent_month": row.recent_month_downloads,
+        "monthly_avg": row.monthly_avg_downloads,
+        "weekly_avg": row.weekly_avg_downloads,
+        "months_measured": row.months_measured,
+    }
