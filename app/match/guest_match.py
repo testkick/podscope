@@ -161,37 +161,79 @@ def _row_to_result(slug, name, publisher, artwork, freq, topics, guests,
 
 
 TIER_META = [
-    ("easy_wins", "Easy wins", "Smaller & emerging shows — most likely to say yes"),
-    ("realistic", "Realistic targets", "Mid-tier shows — bookable with a strong pitch"),
-    ("aspirational", "Aspirational", "Top shows — high reach, but usually book known names"),
+    ("easy_wins", "Easy wins", "Most reachable of your matches — best odds of a yes"),
+    ("realistic", "Realistic targets", "Mid-reach — bookable with a strong pitch"),
+    ("aspirational", "Aspirational", "Biggest reach in your matches — usually book known names"),
 ]
 
 
 def group_by_tier(results: list[dict]) -> list[dict]:
-    """Group ranked results into booking tiers, easy-wins first (that's what most
-    guests actually need). Each result keeps its match rank within its tier."""
+    """Split the ACTUAL matched shows into three reach bands by splitting the set
+    into thirds by PodScope reach — so you always get Easy/Realistic/Aspirational
+    with real spread, regardless of how the enriched catalog's scores are
+    distributed. (Fixed absolute cutoffs collapsed to one tier when coverage
+    skewed high-reach.) Easy-wins first: that's what most guests need.
+
+    With very few results we don't force three thin tiers — we fall back to
+    absolute bands so a 2-show result doesn't look silly."""
+    if not results:
+        return []
+
+    ranked = sorted(results, key=lambda r: (r.get("podscope_score") or 0))
+    n = len(ranked)
+
+    if n >= 6:
+        # relative thirds: lowest-reach third = easy wins, top third = aspirational
+        cut1 = n // 3
+        cut2 = 2 * n // 3
+        for i, r in enumerate(ranked):
+            r["reach_tier"] = ("easy_wins" if i < cut1
+                               else "realistic" if i < cut2
+                               else "aspirational")
+    else:
+        # small set: absolute bands so tiers still mean something
+        for r in ranked:
+            s = r.get("podscope_score") or 0
+            r["reach_tier"] = ("aspirational" if s >= 75
+                               else "realistic" if s >= 45 else "easy_wins")
+
     out = []
     for key, label, blurb in TIER_META:
         rows = [r for r in results if r.get("reach_tier") == key]
+        # keep each tier ordered by match quality (best fit first)
+        rows.sort(key=lambda r: r["match_score"], reverse=True)
         if rows:
             out.append({"key": key, "label": label, "blurb": blurb, "shows": rows})
     return out
 
 
 def match_guests(db, query: str, audience: str = "", limit: int = 30,
-                 min_fit: float = 0.15) -> list[dict]:
-    """Rank guest-booking shows for the query. Uses SEMANTIC matching when
-    embeddings are available (so 'venture capital' matches 'startup investing'),
-    and falls back to keyword overlap otherwise."""
-    semantic = _semantic_match(db, query, audience, limit, min_sim=0.25)
-    if semantic is not None:
-        return semantic
+                 min_fit: float = 0.12) -> list[dict]:
+    """Rank guest-booking shows for the query.
+
+    Active path: list-based topic expansion + keyword matching (no API, no cost,
+    fully transparent). A query like 'venture capital' is expanded to related
+    terms so it matches shows tagged 'startup investing'.
+
+    Dormant path: if EMBEDDINGS_API_KEY is set, semantic embedding search is used
+    instead (higher recall on unanticipated vocabulary). Kept behind the same
+    interface so it's a one-variable upgrade with no code change."""
+    if embeddings_enabled():
+        semantic = _semantic_match(db, query, audience, limit, min_sim=0.25)
+        if semantic is not None:
+            return semantic
     return _keyword_match(db, query, audience, limit, min_fit)
 
 
 def _keyword_match(db, query: str, audience: str, limit: int,
                    min_fit: float) -> list[dict]:
-    query_terms = _terms(f"{query} {audience}")
+    base_terms = _terms(f"{query} {audience}")
+    if not base_terms:
+        return []
+    # list-based semantic expansion: widen to related topic terms so
+    # "venture capital" also matches "startup investing" shows.
+    from app.match.topic_expansion import expand_terms
+    query_terms = expand_terms(base_terms, raw_query=f"{query} {audience}")
     if not query_terms:
         return []
 
@@ -210,7 +252,14 @@ def _keyword_match(db, query: str, audience: str, limit: int,
             gp.suitability_note,
         ]))
         show_terms = _terms(blob)
-        fit = _fit_score(query_terms, show_terms)
+        overlap = len(query_terms & show_terms)
+        if overlap == 0:
+            continue
+        # Fit rewards absolute overlap with diminishing returns, rather than
+        # dividing by the (large, expanded) query set — otherwise a genuinely
+        # relevant show that hits 3 of 40 expanded terms would look weak.
+        # 1 hit ~0.55, 2 ~0.72, 3 ~0.82, 4+ approaching 1.0.
+        fit = 1.0 - (0.7 ** overlap)
         if fit < min_fit:
             continue
         reach = (score.score if score else 0.0) / 100.0   # 0..1

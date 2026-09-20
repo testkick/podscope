@@ -129,9 +129,36 @@ def backfill(db, all_shows=False, limit=MAX_PER_RUN, force=False) -> dict:
             "pgvector": pgvector, "dim": EMBED_DIM}
 
 
+def _force_once_done(db) -> bool:
+    """Has the one-time full re-embed already run? Tracked in a DB marker so it
+    survives redeploys and cron restarts (a file wouldn't on ephemeral containers)."""
+    from sqlalchemy import text as _t
+    try:
+        db.execute(_t("CREATE TABLE IF NOT EXISTS embed_markers "
+                      "(name TEXT PRIMARY KEY, done_at TEXT)"))
+        db.commit()
+        row = db.execute(_t("SELECT name FROM embed_markers WHERE name='force_once'")).first()
+        return row is not None
+    except Exception:
+        return False
+
+
+def _mark_force_once(db):
+    from sqlalchemy import text as _t
+    from datetime import datetime
+    db.execute(_t("INSERT INTO embed_markers (name, done_at) VALUES "
+                  "('force_once', :t) ON CONFLICT (name) DO NOTHING"),
+               {"t": datetime.utcnow().isoformat()})
+    db.commit()
+
+
 def main():
     all_shows = "--all" in sys.argv
     force = "--force" in sys.argv
+    # --force-once: force EXACTLY one full re-embed ever, then self-downgrade to
+    # normal incremental. Safe to leave permanently in the cron start command —
+    # it re-forces nothing on later runs, so no double-charge, nothing to remove.
+    force_once = "--force-once" in sys.argv
     limit = MAX_PER_RUN
     if "--limit" in sys.argv:
         i = sys.argv.index("--limit")
@@ -141,8 +168,25 @@ def main():
     init_db()
     db = SessionLocal()
     try:
+        if force_once:
+            if _force_once_done(db):
+                print("[embed] --force-once already completed; running incremental")
+            else:
+                force = True
+                # uncapped for the one-time catch-up so EVERY enriched show gets
+                # re-embedded, not just the first MAX_PER_RUN of them
+                limit = int(os.environ.get("EMBED_FORCE_LIMIT", "100000"))
+                print("[embed] --force-once: running one-time FULL re-embed "
+                      f"(limit {limit})")
+
         r = backfill(db, all_shows=all_shows, limit=limit, force=force)
         print(f"[embed] {r}")
+
+        # only mark done if the forced run actually embedded (didn't no-op on a
+        # missing API key) — so a misconfigured first run doesn't burn the flag
+        if force_once and not _force_once_done(db) and r.get("embedded", 0) > 0:
+            _mark_force_once(db)
+            print("[embed] --force-once marker set; future runs are incremental")
     finally:
         db.close()
 
