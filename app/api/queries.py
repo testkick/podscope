@@ -128,15 +128,17 @@ def show_deals(db, show_id: int, limit: int = 12):
 
 
 def show_brands(db, show_id: int):
-    """Distinct brands with how many episodes they appear in (headline 'N deals')."""
+    """Distinct brands with how many episodes they appear in (headline 'N deals').
+    Includes a slug so the UI can link each brand to its brand page."""
     stmt = (
-        select(DetectedDeal.brand, func.count(DetectedDeal.id))
+        select(DetectedDeal.brand, DetectedDeal.brand_norm, func.count(DetectedDeal.id))
         .where(DetectedDeal.show_id == show_id,
                DetectedDeal.deal_type == "host_read")
-        .group_by(DetectedDeal.brand)
+        .group_by(DetectedDeal.brand, DetectedDeal.brand_norm)
         .order_by(func.count(DetectedDeal.id).desc())
     )
-    return [{"brand": b, "count": c} for b, c in db.execute(stmt)]
+    return [{"brand": b, "slug": _brand_slug(bn), "count": c}
+            for b, bn, c in db.execute(stmt)]
 
 
 def show_guest_profile(db, show_id: int):
@@ -265,3 +267,83 @@ def show_op3(db, show_id: int):
         "weekly_avg": row.weekly_avg_downloads,
         "months_measured": row.months_measured,
     }
+
+
+# ---------- Brand pages (sponsor pivot) ----------
+def _brand_slug(brand_norm: str) -> str:
+    import re
+    return re.sub(r"[^a-z0-9]+", "-", (brand_norm or "").lower()).strip("-")
+
+
+def top_brands(db, limit: int = 100, min_shows: int = 1):
+    """Most-active sponsors: brands grouped by normalized key, counting distinct
+    shows they sponsor. Powers a brand directory + is the basis for each brand
+    page. Picks the most common display spelling per normalized brand."""
+    rows = db.execute(
+        select(DetectedDeal.brand_norm,
+               func.count(func.distinct(DetectedDeal.show_id)).label("shows"),
+               func.count(DetectedDeal.id).label("deals"))
+        .where(DetectedDeal.deal_type == "host_read")
+        .group_by(DetectedDeal.brand_norm)
+        .having(func.count(func.distinct(DetectedDeal.show_id)) >= min_shows)
+        .order_by(func.count(func.distinct(DetectedDeal.show_id)).desc())
+        .limit(limit)
+    ).all()
+    out = []
+    for brand_norm, shows, deals in rows:
+        out.append({
+            "brand_norm": brand_norm,
+            "slug": _brand_slug(brand_norm),
+            "display": _brand_display(db, brand_norm),
+            "shows": shows,
+            "deals": deals,
+        })
+    return out
+
+
+def _brand_display(db, brand_norm: str) -> str:
+    """The most common human spelling for a normalized brand key."""
+    row = db.execute(
+        select(DetectedDeal.brand, func.count(DetectedDeal.id).label("n"))
+        .where(DetectedDeal.brand_norm == brand_norm)
+        .group_by(DetectedDeal.brand)
+        .order_by(func.count(DetectedDeal.id).desc())
+        .limit(1)
+    ).first()
+    return row[0] if row else brand_norm
+
+
+def get_brand(db, slug: str):
+    """Resolve a brand page by slug: display name + every show it sponsors,
+    ranked by PodScope reach. Returns None if unknown."""
+    # find the brand_norm whose slug matches
+    candidates = db.scalars(
+        select(DetectedDeal.brand_norm).distinct()
+    ).all()
+    brand_norm = next((b for b in candidates if _brand_slug(b) == slug), None)
+    if not brand_norm:
+        return None
+
+    display = _brand_display(db, brand_norm)
+    # shows this brand sponsors, best PodScope first
+    rows = db.execute(
+        select(Show, PodScopeScore,
+               func.count(DetectedDeal.id).label("deals"),
+               func.max(DetectedDeal.promo_code).label("promo_code"))
+        .join(DetectedDeal, DetectedDeal.show_id == Show.id)
+        .outerjoin(PodScopeScore, PodScopeScore.show_id == Show.id)
+        .where(DetectedDeal.brand_norm == brand_norm,
+               DetectedDeal.deal_type == "host_read")
+        .group_by(Show.id, PodScopeScore.show_id)
+        .order_by(func.coalesce(PodScopeScore.score, 0).desc())
+    ).all()
+    shows = []
+    for show, score, deals, promo in rows:
+        shows.append({
+            "slug": show.slug, "name": show.name, "publisher": show.publisher,
+            "artwork_url": show.artwork_url,
+            "podscope_score": score.score if score else None,
+            "deals": deals, "promo_code": promo,
+        })
+    return {"display": display, "slug": slug, "brand_norm": brand_norm,
+            "shows": shows, "show_count": len(shows)}

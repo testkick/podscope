@@ -89,7 +89,7 @@
   <h2 class="sec">Sponsors detected</h2>
   <div class="brands">
     {% for b in brands %}
-    <span class="brand-tag">{{ b.brand }}<em>{{ b.count }} ep{{ 's' if b.count > 1 else '' }}</em></span>
+    <a href="/brands/{{ b.slug }}" class="brand-tag">{{ b.brand }}<em>{{ b.count }} ep{{ 's' if b.count > 1 else '' }}</em></a>
     {% endfor %}
   </div>
   {% endif %}

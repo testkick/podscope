@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ brand.display }} — podcast sponsorships | PodScope{% endblock %}
+{% block meta_desc %}Every podcast {{ brand.display }} sponsors, ranked by reach, with promo codes and PodScope Scores.{% endblock %}
+{% block content %}
+
+<div style="margin-bottom:8px"><a href="/brands" style="font-size:13px;color:var(--muted)">← All sponsors</a></div>
+<section class="hero" style="margin-bottom:20px">
+  <h1 style="font-size:34px">{{ brand.display }}</h1>
+  <p>Sponsors <strong>{{ brand.show_count }}</strong> podcast{{ 's' if brand.show_count != 1 }} we've detected — ranked by PodScope reach.</p>
+</section>
+
+<h2 class="sec">Shows sponsored by {{ brand.display }}</h2>
+<ol class="matches">
+  {% for s in brand.shows %}
+  <li>
+    {% if s.artwork_url %}<img src="{{ s.artwork_url }}" alt="">{% endif %}
+    <div class="m-info">
+      <a class="m-name" href="/show/{{ s.slug }}">{{ s.name }}</a>
+      {% if s.publisher %}<span class="m-pub">{{ s.publisher }}</span>{% endif %}
+      <div class="m-why">
+        {{ s.deals }} sponsored episode{{ 's' if s.deals != 1 }}
+        {% if s.promo_code %} · code <span class="code">{{ s.promo_code }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="m-metrics">
+      {% if s.podscope_score %}<div class="m-match"><span class="mm-num">{{ s.podscope_score|round|int }}</span><span class="mm-lab">PodScope</span></div>{% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ol>
+<p class="disclaimer">Sponsorships are deduced from episode transcripts and show
+notes — evidence-based, not confirmed by {{ brand.display }} or the shows. Ranked
+by PodScope Score (cross-market reach).</p>
+{% endblock %}

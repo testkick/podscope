@@ -112,6 +112,32 @@ def api_guest_match(q: str = Query(...), audience: str = "",
     return match_guests(db, q, audience)
 
 
+@app.get("/brands", response_class=HTMLResponse)
+def brands_directory(request: Request, db: Session = Depends(get_session)):
+    brands = Q.top_brands(db, limit=120, min_shows=1)
+    return templates.TemplateResponse(
+        "brands.html", {"request": request, "brands": brands}
+    )
+
+
+@app.get("/brands/{slug}", response_class=HTMLResponse)
+def brand_page(slug: str, request: Request, db: Session = Depends(get_session)):
+    brand = Q.get_brand(db, slug)
+    if not brand:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    return templates.TemplateResponse(
+        "brand.html", {"request": request, "brand": brand}
+    )
+
+
+@app.get("/api/brands/{slug}")
+def api_brand(slug: str, db: Session = Depends(get_session)):
+    brand = Q.get_brand(db, slug)
+    if not brand:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return brand
+
+
 @app.get("/show/{slug}", response_class=HTMLResponse)
 def show_page(slug: str, request: Request, db: Session = Depends(get_session)):
     show = Q.get_show_by_slug(db, slug)

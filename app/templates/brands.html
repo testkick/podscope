@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Podcast sponsors directory — PodScope{% endblock %}
+{% block meta_desc %}Browse podcast sponsors and the shows they advertise on, ranked by reach.{% endblock %}
+{% block content %}
+<section class="hero" style="margin-bottom:20px">
+  <h1 style="font-size:32px">Podcast sponsors</h1>
+  <p>Every brand we've detected advertising on podcasts, and the shows they
+     sponsor. Click a brand to see its full roster, ranked by reach.</p>
+</section>
+
+{% if brands %}
+<ul class="brand-dir">
+  {% for b in brands %}
+  <li>
+    <a href="/brands/{{ b.slug }}" class="bd-name">{{ b.display }}</a>
+    <span class="bd-count">{{ b.shows }} show{{ 's' if b.shows != 1 }}</span>
+  </li>
+  {% endfor %}
+</ul>
+<p class="disclaimer">Sponsors are deduced from episode transcripts and show
+notes — evidence-based, not confirmed by the show or brand.</p>
+{% else %}
+<p style="color:var(--muted)">No sponsors detected yet — check back as more shows
+are analyzed.</p>
+{% endif %}
+{% endblock %}
