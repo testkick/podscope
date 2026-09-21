@@ -7,58 +7,27 @@ Runs, in order:
   1. collect  — pull fresh chart data (the irreducibly-temporal step)
   2. enrich   — fetch + detect sponsors/guests for charting shows not yet done
   3. score    — recompute PodScope Scores on the fresh chart data
-  4. op3_sync — refresh OP3 download-measurement overlap for our shows
 
-Why one ordered job beats four crons:
+Why one ordered job beats three crons:
   - Correct ordering is GUARANTEED (score always runs after collect, on the same
-    data), instead of staggering four schedules and hoping they line up.
+    data), instead of staggering three schedules and hoping they line up.
   - One service to deploy, configure, and watch — one log tells the whole story.
-  - OP3 sync inherits the pipeline's DATABASE_URL for free — no separate
-    service, no separate credentials to wire up.
 
 Failure isolation: each stage runs in its own try/except. A flaky enrich must
-NOT stop scoring, and a bad score or op3_sync step must not hide that
-collection succeeded. Each stage reports its own status; the pipeline exits
-non-zero only if the CRITICAL stage (collect) failed or produced nothing —
-matching the collector's own health semantics — so Railway's red badge still
-means "the important thing broke", not "one optional stage hiccuped".
+NOT stop scoring, and a bad score step must not hide that collection succeeded.
+Each stage reports its own status; the pipeline exits non-zero only if the
+CRITICAL stage (collect) failed or produced nothing — matching the collector's
+own health semantics — so Railway's red badge still means "the important thing
+broke", not "one optional enrichment hiccuped".
 
 Stages can be skipped with env flags for flexibility:
-  PIPELINE_SKIP_ENRICH=1   PIPELINE_SKIP_SCORE=1   PIPELINE_SKIP_OP3=1
-
-OP3 data changes slowly (download counts trickle in over weeks), so it's fine
-to run it every pipeline cycle (every 6 hours) — but to avoid unnecessary API
-hits you can throttle it to run only every Nth cycle via:
-  OP3_SYNC_EVERY_N_CYCLES=3   # e.g. 3 => once per 18h, 5 => once per 30h
-When set, the pipeline tracks a cycle counter in a small state file so the
-throttle survives across separate `python -m app.pipeline` invocations.
+  PIPELINE_SKIP_ENRICH=1   PIPELINE_SKIP_SCORE=1
 """
 
 import os
 import sys
 import time
 import traceback
-
-
-STATE_FILE = os.environ.get("PIPELINE_STATE_FILE", "/tmp/.podscope_pipeline_state")
-
-
-def _next_op3_cycle() -> int:
-    """Increment and return the pipeline's persistent cycle counter, used to
-    throttle OP3 sync to every Nth run (OP3_SYNC_EVERY_N_CYCLES). If the state
-    file can't be read/written (e.g. no persistent volume across cron runs),
-    we fail safe and just run OP3 sync every cycle."""
-    try:
-        cycle = 0
-        if os.path.exists(STATE_FILE):
-            with open(STATE_FILE) as f:
-                cycle = int((f.read() or "0").strip() or 0)
-        cycle += 1
-        with open(STATE_FILE, "w") as f:
-            f.write(str(cycle))
-        return cycle
-    except Exception:  # noqa: BLE001 - throttling is best-effort, never fatal
-        return 1
 
 
 def _run_stage(name, fn) -> dict:
@@ -101,19 +70,17 @@ def main() -> int:
     else:
         print("\n[pipeline] score skipped (PIPELINE_SKIP_SCORE set)")
 
-    # 4. OP3_SYNC — refresh OP3 download-measurement overlap; optional/non-critical.
-    # Data changes slowly, so it's safe to throttle to every Nth cycle.
+    # 4. OP3 — verified downloads. Data changes slowly, so run it only every Nth
+    # pipeline cycle (default: every cycle if OP3_EVERY_N=1). Non-critical.
     if os.environ.get("PIPELINE_SKIP_OP3", "").lower() not in ("1", "true", "yes"):
-        every_n = int(os.environ.get("OP3_SYNC_EVERY_N_CYCLES", "1") or "1")
-        cycle = _next_op3_cycle()
-        if every_n <= 1 or cycle % every_n == 0:
-            from app.op3.sync import main as op3_sync_main
-            results.append(_run_stage("op3_sync", op3_sync_main))
+        every_n = int(os.environ.get("OP3_EVERY_N", "1"))
+        if _should_run_op3(every_n):
+            from app.op3.sync import main as op3_main
+            results.append(_run_stage("op3", op3_main))
         else:
-            print(f"\n[pipeline] op3_sync skipped (cycle {cycle}, "
-                  f"runs every {every_n} cycles)")
+            print(f"\n[pipeline] op3 skipped this cycle (runs every {every_n} cycles)")
     else:
-        print("\n[pipeline] op3_sync skipped (PIPELINE_SKIP_OP3 set)")
+        print("\n[pipeline] op3 skipped (PIPELINE_SKIP_OP3 set)")
 
     # summary
     print("\n===== [pipeline] summary =====")
@@ -122,9 +89,33 @@ def main() -> int:
         print(f"  {r['stage']:8} {status} — {r['seconds']}s")
 
     # Exit code: only the critical collect stage determines red/green, matching
-    # the collector's own semantics. Enrich/score failures are logged but don't
-    # flip the badge (they're best-effort downstream work).
+    # the collector's own semantics. Enrich/score/op3 failures are logged but
+    # don't flip the badge (they're best-effort downstream work).
     return 0 if collect["ok"] else 1
+
+
+def _should_run_op3(every_n: int) -> bool:
+    """OP3 data changes slowly — no need to hit it every pipeline cycle. Track a
+    counter in a tiny DB marker so 'every Nth cycle' survives restarts."""
+    if every_n <= 1:
+        return True
+    try:
+        from sqlalchemy import text as _t
+        from app.db.session import SessionLocal
+        db = SessionLocal()
+        try:
+            db.execute(_t("CREATE TABLE IF NOT EXISTS pipeline_markers "
+                          "(name TEXT PRIMARY KEY, n INTEGER)"))
+            row = db.execute(_t("SELECT n FROM pipeline_markers WHERE name='op3_cycle'")).first()
+            n = (row[0] if row else 0) + 1
+            db.execute(_t("INSERT INTO pipeline_markers (name, n) VALUES ('op3_cycle', :n) "
+                          "ON CONFLICT (name) DO UPDATE SET n = :n"), {"n": n})
+            db.commit()
+            return n % every_n == 0
+        finally:
+            db.close()
+    except Exception:
+        return True  # if the counter fails, just run it
 
 
 if __name__ == "__main__":

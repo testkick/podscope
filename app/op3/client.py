@@ -81,10 +81,14 @@ def show_downloads(show_uuid: str) -> dict | None:
     if not isinstance(block, dict):
         block = data  # last resort
 
-    monthly = block.get("monthlyDownloads") or {}
-    weekly = block.get("weeklyDownloads") or {}
-    m_vals = [v for v in monthly.values() if isinstance(v, (int, float))]
-    w_vals = [v for v in weekly.values() if isinstance(v, (int, float))]
+    monthly = block.get("monthlyDownloads")
+    weekly = block.get("weeklyDownloads")
+    m_vals = _to_series(monthly)
+    w_vals = _to_series(weekly)
+    # OP3 may also expose a single aggregate under other keys
+    single_month = block.get("monthlyDownloadCount") or block.get("downloads")
+    if not m_vals and isinstance(single_month, (int, float)):
+        m_vals = [single_month]
     if not m_vals and not w_vals:
         return None
     return {
@@ -93,3 +97,27 @@ def show_downloads(show_uuid: str) -> dict | None:
         "weekly_avg": round(sum(w_vals) / len(w_vals)) if w_vals else None,
         "months_measured": len(m_vals),
     }
+
+
+def _to_series(v) -> list:
+    """OP3 fields come back in different shapes across endpoints — a dict of
+    {period: count}, a plain int (single aggregate), a list of counts, or a list
+    of {count/downloads: N} objects. Normalize any of these to a list of numbers."""
+    if v is None:
+        return []
+    if isinstance(v, (int, float)):
+        return [v]
+    if isinstance(v, dict):
+        return [x for x in v.values() if isinstance(x, (int, float))]
+    if isinstance(v, list):
+        out = []
+        for item in v:
+            if isinstance(item, (int, float)):
+                out.append(item)
+            elif isinstance(item, dict):
+                for k in ("count", "downloads", "value", "n"):
+                    if isinstance(item.get(k), (int, float)):
+                        out.append(item[k])
+                        break
+        return out
+    return []
