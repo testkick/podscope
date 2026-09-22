@@ -61,6 +61,53 @@ def _clean_brand(raw: str) -> str:
     return b[:60]
 
 
+# Junk that leaks in as "brands": HTML entities, ad-copy fragments, call-to-action
+# words, generic filler. Matched on the normalized key so spacing/case don't matter.
+_BRAND_STOPLIST = {
+    # HTML entities that survived stripping
+    "nbsp", "amp", "quot", "apos", "lt", "gt", "mdash", "ndash",
+    # call-to-action / ad-copy fragments
+    "visit", "our", "more", "look", "get", "go", "headto", "head", "code",
+    "freelistening", "free", "listening", "use", "check", "checkout", "today",
+    "start", "startyour", "tryit", "try", "learnmore", "learn", "shopnow",
+    "shop", "download", "downloadthe", "sign", "signup", "join", "click",
+    "save", "getstarted", "findyour", "find", "call", "text", "the", "your",
+    "you", "we", "us", "me", "and", "for", "with", "at", "on", "in", "to",
+    "new", "now", "here", "visitthe", "plus", "also", "just", "only",
+    # generic revenue/return phrases seen in the data
+    "amonthinrevenue", "dayreturns", "365dayreturns", "moneyback",
+    "freeshipping", "freetrial", "offyourfirst", "percentoff",
+}
+
+
+def is_valid_brand(display: str, brand_norm: str | None = None) -> bool:
+    """True if this looks like a real brand, not ad-copy junk. Conservative —
+    leans toward KEEPING ambiguous names (real brands like 'Article', 'Factor',
+    'Quince' look word-like), only rejecting clear junk."""
+    if not display or not display.strip():
+        return False
+    norm = brand_norm if brand_norm is not None else _norm(display)
+    if not norm:
+        return False
+    # 1. stop-list (HTML entities, ad-copy fragments, filler)
+    if norm in _BRAND_STOPLIST:
+        return False
+    # 2. starts with a digit / mostly numeric ("365 day returns", "000 a month")
+    if display.strip()[0].isdigit():
+        return False
+    if sum(c.isdigit() for c in norm) > len(norm) / 2:
+        return False
+    # 3. too short to be a brand (single/double char)
+    if len(norm) < 3:
+        return False
+    # 4. all-lowercase multi-word fragments are almost always ad copy
+    #    ("free listening", "head to") — real brands are capitalized or one token.
+    #    Keep single lowercase tokens (could be a stylized brand) unless stoplisted.
+    if " " in display.strip() and display.strip().islower():
+        return False
+    return True
+
+
 # Matches an explicit sponsor-list header, the dominant real format:
 #   "Thank you to our Sponsors: Mountain Dew, Draft Kings, Acorns & Talkspace"
 #   "This week's sponsors: X, Y and Z"   "Sponsored by: A, B, C"
@@ -234,6 +281,7 @@ def detect_sponsors(text: str) -> list[dict]:
     if llm:
         for d in llm:
             rules[d["brand_norm"]] = d  # LLM classification supersedes
-    # Drop pure affiliate/mention-low noise from the headline count later; keep
-    # everything here so the UI can filter by confidence.
-    return list(rules.values())
+    # Filter out junk "brands" (HTML entities, ad-copy fragments) so they never
+    # enter the DB. is_valid_brand is conservative — keeps ambiguous real brands.
+    return [d for d in rules.values()
+            if is_valid_brand(d.get("brand", ""), d.get("brand_norm"))]

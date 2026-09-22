@@ -32,7 +32,14 @@ _TAG_RE = re.compile(r"<[^>]+>")
 def _strip_html(s: str | None) -> str:
     if not s:
         return ""
-    return _TAG_RE.sub(" ", s).replace("&amp;", "&").strip()
+    import html as _html
+    # strip tags, then decode ALL HTML entities (&nbsp; &amp; &#39; etc.) —
+    # previously only &amp; was handled, so &nbsp; leaked in as a fake "brand".
+    text = _TAG_RE.sub(" ", s)
+    text = _html.unescape(text)
+    # collapse the non-breaking spaces / whitespace that entities decode to
+    text = text.replace("\xa0", " ")
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def fetch_feed(feed_url: str, max_episodes: int = 12) -> dict:
