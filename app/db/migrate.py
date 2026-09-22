@@ -56,6 +56,12 @@ def migrate() -> list[str]:
         except Exception as exc:
             # pgvector not available on this instance — JSON fallback still works
             applied.append(f"pgvector skipped ({type(exc).__name__})")
+    for col, ddl in [("host_name","ALTER TABLE shows ADD COLUMN host_name VARCHAR(512)"),
+                     ("about","ALTER TABLE shows ADD COLUMN about TEXT")]:
+        if not _column_exists("shows", col):
+            with engine.begin() as conn:
+                conn.execute(text(ddl))
+            applied.append(f"shows.{col}")
     return applied
 
 

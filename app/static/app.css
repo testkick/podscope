@@ -202,3 +202,23 @@ footer.site{border-top:1px solid var(--line);margin-top:60px;padding:24px 0;colo
 a.brand-tag{text-decoration:none;color:var(--ink)}
 a.brand-tag:hover{border-color:var(--signal)}
 @media (max-width:600px){.brand-dir{columns:1}}
+
+/* Show page: platform links, about, episodes -------------------- */
+.platform-links{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 18px}
+.plink{padding:8px 16px;border-radius:8px;font-weight:700;font-size:14px;text-decoration:none;border:1px solid var(--line)}
+.plink-apple{color:#7a3ea8;border-color:#e3d4ef;background:#faf5ff}
+.plink-spotify{color:#1a7f4b;border-color:#cfe8d9;background:#f3fbf6}
+.plink-youtube{color:#c0392b;border-color:#f0d0cb;background:#fdf4f2}
+.plink:hover{border-color:var(--signal)}
+
+.about-box{border:1px solid var(--line);border-radius:12px;background:#fff;padding:16px 18px;margin-bottom:8px}
+.about-host{font-size:14px;margin-bottom:8px}
+.about-host .ah-label{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-right:6px}
+.about-text{margin:0;color:var(--ink);font-size:15px;line-height:1.55}
+
+.episodes{list-style:none;padding:0;margin:0}
+.episodes li{padding:12px 0;border-bottom:1px solid var(--line)}
+.ep-head{display:flex;justify-content:space-between;gap:14px;align-items:baseline}
+.ep-title{font-weight:700}
+.ep-date{color:var(--muted);font-size:13px;white-space:nowrap}
+.ep-blurb{color:var(--muted);font-size:14px;margin-top:4px;line-height:1.5}

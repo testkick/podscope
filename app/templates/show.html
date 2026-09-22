@@ -20,6 +20,21 @@
   {% endif %}
 </div>
 
+{% if links %}
+<div class="platform-links">
+  {% if links.apple %}<a href="{{ links.apple }}" target="_blank" rel="noopener" class="plink plink-apple">Apple Podcasts</a>{% endif %}
+  {% if links.spotify %}<a href="{{ links.spotify }}" target="_blank" rel="noopener" class="plink plink-spotify">Spotify</a>{% endif %}
+  {% if links.youtube %}<a href="{{ links.youtube }}" target="_blank" rel="noopener" class="plink plink-youtube">YouTube</a>{% endif %}
+</div>
+{% endif %}
+
+{% if about and (about.about or about.host_name) %}
+<div class="about-box">
+  {% if about.host_name %}<div class="about-host"><span class="ah-label">Host / creator</span> {{ about.host_name }}</div>{% endif %}
+  {% if about.about %}<p class="about-text">{{ about.about }}</p>{% endif %}
+</div>
+{% endif %}
+
 {% if positions %}
   {% set best = positions | sort(attribute='rank') | first %}
   <div class="headline-rank">
@@ -160,6 +175,21 @@
   <p class="disclaimer">Actual download counts from the Open Podcast Prefix Project
   (OP3) — open, auditable, privacy-preserving. Available for shows that use the OP3
   prefix; unlike our chart-based estimates, these are measured, not modeled.</p>
+  {% endif %}
+
+  {% if episodes %}
+  <h2 class="sec">Recent episodes</h2>
+  <ul class="episodes">
+    {% for e in episodes %}
+    <li>
+      <div class="ep-head">
+        <span class="ep-title">{{ e.title }}</span>
+        {% if e.published %}<span class="ep-date">{{ e.published }}</span>{% endif %}
+      </div>
+      {% if e.blurb %}<div class="ep-blurb">{{ e.blurb }}</div>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
   {% endif %}
 
   <div class="paywall">

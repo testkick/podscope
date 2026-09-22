@@ -101,6 +101,11 @@ def process_job(db, job: EnrichJob, feed_url: str | None = None) -> str:
 
     feed = fetch_feed(feed_url, max_episodes=12)
     episodes = feed["episodes"]
+    # capture host name + about from the feed (stated by the show, not AI)
+    if feed.get("host_name") and not show.host_name:
+        show.host_name = feed["host_name"]
+    if feed.get("about") and not show.about:
+        show.about = feed["about"]
 
     if job.kind == "sponsors":
         total = 0

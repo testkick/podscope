@@ -347,3 +347,40 @@ def get_brand(db, slug: str):
         })
     return {"display": display, "slug": slug, "brand_norm": brand_norm,
             "shows": shows, "show_count": len(shows)}
+
+
+# ---------- richer show page: episodes, links, host ----------
+def show_recent_episodes(db, show_id: int, limit: int = 8):
+    from app.db.enrich_models import Episode
+    rows = db.scalars(
+        select(Episode).where(Episode.show_id == show_id)
+        .order_by(Episode.published.desc().nullslast())
+        .limit(limit)
+    ).all()
+    out = []
+    for e in rows:
+        desc = (e.description or "").strip()
+        out.append({
+            "title": e.title,
+            "published": e.published.isoformat() if e.published else None,
+            "blurb": (desc[:280] + "…") if len(desc) > 280 else desc,
+        })
+    return out
+
+
+def show_links(show) -> dict:
+    """Deep links to the show on each platform. Apple/Spotify from stored IDs;
+    YouTube as a search link (we don't store a channel id)."""
+    import urllib.parse
+    links = {}
+    if show.apple_id:
+        links["apple"] = f"https://podcasts.apple.com/podcast/id{show.apple_id}"
+    if show.spotify_id:
+        links["spotify"] = f"https://open.spotify.com/show/{show.spotify_id}"
+    q = urllib.parse.quote(show.name or "")
+    links["youtube"] = f"https://www.youtube.com/results?search_query={q}+podcast"
+    return links
+
+
+def show_about(show) -> dict:
+    return {"host_name": show.host_name, "about": show.about}

@@ -44,6 +44,11 @@ class Show(Base):
     # merge key. Nullable until resolved.
     feed_url: Mapped[str | None] = mapped_column(String(2048), index=True)
 
+    # host/author name + show description from the RSS feed (stated by the show
+    # itself, not AI-generated). Powers the richer show page.
+    host_name: Mapped[str | None] = mapped_column(String(512))
+    about: Mapped[str | None] = mapped_column(Text)
+
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

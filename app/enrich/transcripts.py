@@ -56,6 +56,24 @@ def fetch_feed(feed_url: str, max_episodes: int = 12) -> dict:
         em = owner.find("itunes:email", NS)
         owner_email = em.text.strip() if em is not None and em.text else None
 
+    # host/author name: itunes:author preferred, then itunes:owner name, then <author>
+    host_name = None
+    au = channel.find("itunes:author", NS)
+    if au is not None and au.text:
+        host_name = au.text.strip()
+    if not host_name and owner is not None:
+        on = owner.find("itunes:name", NS)
+        if on is not None and on.text:
+            host_name = on.text.strip()
+
+    # about: channel description / itunes:summary
+    about = None
+    cdesc = channel.find("description")
+    csum = channel.find("itunes:summary", NS)
+    about = _strip_html((cdesc.text if cdesc is not None else None)
+                        or (csum.text if csum is not None else None))
+    about = about[:2000] if about else None
+
     episodes = []
     for item in channel.findall("item")[:max_episodes]:
         guid_el = item.find("guid")
@@ -87,7 +105,8 @@ def fetch_feed(feed_url: str, max_episodes: int = 12) -> dict:
             "description": description,
             "transcript_url": tr.get("url") if tr is not None else None,
         })
-    return {"owner_email": owner_email, "episodes": episodes}
+    return {"owner_email": owner_email, "host_name": host_name,
+            "about": about, "episodes": episodes}
 
 
 def get_episode_text(ep: dict) -> tuple[str, str] | None:

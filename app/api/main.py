@@ -157,13 +157,16 @@ def show_page(slug: str, request: Request, db: Session = Depends(get_session)):
     guest = Q.show_guest_profile(db, show.id)
     score = Q.show_score(db, show.id)
     op3 = Q.show_op3(db, show.id)
+    episodes = Q.show_recent_episodes(db, show.id)
+    links = Q.show_links(show)
+    about = Q.show_about(show)
     return templates.TemplateResponse(
         "show.html",
         {
             "request": request, "show": show, "positions": positions,
             "geo": geo, "trend": trend, "trend_label": trend_label,
             "deals": deals, "brands": brands, "guest": guest, "score": score,
-            "op3": op3,
+            "op3": op3, "episodes": episodes, "links": links, "about": about,
         },
     )
 
