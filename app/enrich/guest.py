@@ -122,6 +122,10 @@ _DESC_GUEST_PHRASES = [
     r"our guest", r"special guest", r"returns? to the (?:show|podcast)",
     r"back on the (?:show|podcast)", r"in conversation with",
     r"talks? (?:to|with)\b", r"chats? with\b", r"is joined", r"guest[:\s]",
+    # conversational interview-show phrasings (e.g. Amy Poehler's "Good Hang")
+    r"hangs? (?:out )?with", r"catches? up with", r"hangs? with",
+    r"speaks? with", r"interviews?\b", r"stops? by", r"drops? by",
+    r"this week[^.]{0,30}\bwith\b",
 ]
 _DESC_GUEST_RE = re.compile("|".join(_DESC_GUEST_PHRASES), re.I)
 
@@ -143,6 +147,48 @@ def _looks_like_name_topic_guest(title: str) -> str | None:
     if low in _NOT_A_NAME_PREFIX or any(low.startswith(p) for p in _NOT_A_NAME_PREFIX):
         return None
     return name
+
+
+# Bare-name title: the WHOLE title is just a person's name (e.g. "Robert De Niro",
+# "Kenan Thompson") — common on interview shows. This is the hardest case: a
+# regex can't be sure "Robert De Niro" is a person and "Creative Burnout" isn't.
+# So we're deliberately CONSERVATIVE — require it to look strongly like a name and
+# carry no topic/segment words, accepting some misses to avoid false positives.
+# Common non-name words that appear as short title-case titles but aren't people.
+_NOT_A_PERSON_WORDS = set(_TOPIC_WORDS) | {
+    "live", "bonus", "finale", "premiere", "trailer", "update", "recap",
+    "special", "part", "chapter", "intro", "outro", "mailbag", "aftershow",
+    "highlights", "throwback", "encore", "rewind", "best", "top", "new",
+    "welcome", "introducing", "announcement", "season", "episode",
+}
+
+
+def _looks_like_bare_name_guest(title: str) -> str | None:
+    """Whole title is just a person's name -> return it, else None. Conservative."""
+    t = title.strip().strip(".!?")
+    # allow a trailing parenthetical like "(Live)" and strip it
+    t = re.sub(r"\s*\([^)]*\)\s*$", "", t).strip()
+    words = t.split()
+    if not (2 <= len(words) <= 4):
+        return None
+    low_words = [w.lower().strip(".,'") for w in words]
+    # every word must be capitalized (allow lowercase connectors: de, van, la, of)
+    connectors = {"de", "van", "von", "la", "le", "del", "di", "da", "the", "of"}
+    for w, lw in zip(words, low_words):
+        if lw in connectors:
+            continue
+        if not w[:1].isupper():
+            return None
+        if lw in _NOT_A_PERSON_WORDS:
+            return None            # a topic/segment word -> not a person
+    if re.search(r"\d", t):
+        return None                # numbers -> not a bare name
+    # require the full string to match a person-name shape
+    if not _PERSON_RE.fullmatch(t):
+        # _PERSON_RE allows 2-3 words; also accept a middle connector form
+        if not re.fullmatch(r"[A-Z][A-Za-z.'-]+(?:\s+(?:de|van|von|la|le|del|di|da)\s+|\s+)[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+)?", t):
+            return None
+    return t
 
 
 def _extract_desc_guest(description: str, host_names: set[str]) -> str | None:
@@ -185,6 +231,21 @@ def analyze_guest_rules(episodes: list[dict], show_name: str = "",
     words = Counter()
     guest_names = []
     host_names = _host_name_set(show_name, publisher)
+    # Bare-name titles ("Robert De Niro") are ambiguous — "Creative Burnout" looks
+    # the same to a regex. So we only TRUST bare-name detection on shows that show
+    # OTHER guest signals (an explicit guest format or a description guest-phrase
+    # somewhere in the recent episodes). Compute that corroboration first.
+    corroborated = False
+    for ep in episodes:
+        t = ep.get("title", "")
+        d = ep.get("description", "")
+        if (_GUEST_RE.search(t) or _looks_like_number_name_guest(t)
+                or _looks_like_number_name_topic_guest(t)
+                or _looks_like_name_topic_guest(t)
+                or _DESC_GUEST_RE.search(d) or "interview" in (t + " " + d).lower()):
+            corroborated = True
+            break
+
     for ep in episodes:
         blob = f"{ep.get('title','')} {ep.get('description','')}"
         title = ep.get("title", "")
@@ -201,6 +262,13 @@ def analyze_guest_rules(episodes: list[dict], show_name: str = "",
         if name_topic and _norm_name(name_topic) not in host_names:
             is_guest = True
             guest_names.append(name_topic)
+        # bare-name title ("Robert De Niro") — only when the show is corroborated
+        # as a guest show by other signals, else too risky (topic false positives)
+        if not is_guest and corroborated:
+            bare = _looks_like_bare_name_guest(title)
+            if bare and _norm_name(bare) not in host_names:
+                is_guest = True
+                guest_names.append(bare)
         # Tier B/C: description guest-phrase (+ extracted name where possible)
         if not is_guest and _DESC_GUEST_RE.search(desc):
             is_guest = True
