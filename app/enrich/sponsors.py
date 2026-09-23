@@ -50,7 +50,11 @@ _BRAND_CUT = re.compile(
 
 
 def _clean_brand(raw: str) -> str:
-    b = raw.strip()
+    import html as _html
+    b = _html.unescape(raw or "").replace("\xa0", " ").strip()
+    # cut trailing ad copy after a dash/pipe: "Kalshi – Download" -> "Kalshi",
+    # "Tecovas – Right now" -> "Tecovas", "HSBC UK – https" -> "HSBC UK".
+    b = re.split(r"\s+[–—|-]\s+", b, 1)[0].strip()
     # cut at the first sentence/punctuation boundary
     b = re.split(r"[.,!?;:/\n]", b, 1)[0].strip()
     # cut at the first action verb / filler word ("Squarespace Go" -> "Squarespace")
@@ -77,6 +81,14 @@ _BRAND_STOPLIST = {
     # generic revenue/return phrases seen in the data
     "amonthinrevenue", "dayreturns", "365dayreturns", "moneyback",
     "freeshipping", "freetrial", "offyourfirst", "percentoff",
+    # second-pass fragments seen in the brand directory
+    "going", "apply", "especially", "budget", "support", "twit", "withsso",
+    "banking", "career", "upgradeyoureveryday", "anamericanoriginal",
+    "ifyouvebeeninbusiness", "cardiffifyouvebeeninbusiness", "disclaimer",
+    "https", "http", "www", "download", "downloadcashapp", "rightnow",
+    "simpleingredients", "eqs", "sponsoredby", "thisepisode", "brought",
+    "broughttoyou", "promo", "promocode", "offer", "deal", "discount",
+    "limited", "limitedtime", "exclusive", "everyday", "yourfirst",
 }
 
 
@@ -104,6 +116,17 @@ def is_valid_brand(display: str, brand_norm: str | None = None) -> bool:
     #    ("free listening", "head to") — real brands are capitalized or one token.
     #    Keep single lowercase tokens (could be a stylized brand) unless stoplisted.
     if " " in display.strip() and display.strip().islower():
+        return False
+    # 5. leftover HTML-entity remnants or URLs -> junk ("Europe&apos;s", "HSBC UK – https")
+    low = display.lower()
+    if any(x in low for x in ("&apos", "&amp", "&quot", "&nbsp", "http", "www.", "://")):
+        return False
+    # 6. contains a dash followed by ad-copy that survived ("Cardiff – If you've...")
+    #    or is just too long/wordy to be a brand name (>5 words = a sentence).
+    if len(display.split()) > 5:
+        return False
+    # 7. disclaimer / NMLS / regulatory boilerplate
+    if any(x in low for x in ("disclaimer", "nmls", "terms apply", "see site")):
         return False
     return True
 
