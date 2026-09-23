@@ -160,6 +160,7 @@ def show_page(slug: str, request: Request, db: Session = Depends(get_session)):
     episodes = Q.show_recent_episodes(db, show.id)
     links = Q.show_links(show)
     about = Q.show_about(show)
+    review_geo = Q.show_review_geo(db, show.id)
     return templates.TemplateResponse(
         "show.html",
         {
@@ -167,6 +168,7 @@ def show_page(slug: str, request: Request, db: Session = Depends(get_session)):
             "geo": geo, "trend": trend, "trend_label": trend_label,
             "deals": deals, "brands": brands, "guest": guest, "score": score,
             "op3": op3, "episodes": episodes, "links": links, "about": about,
+            "review_geo": review_geo,
         },
     )
 

@@ -137,3 +137,20 @@ class OP3Metrics(Base):
     months_measured: Mapped[int | None] = mapped_column(Integer)
     checked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     measured: Mapped[bool] = mapped_column(Boolean, default=False)  # is it in OP3?
+
+
+class ReviewGeo(Base):
+    """Per-storefront Apple review counts — the audience-geography signal. One row
+    per (show, country). Counts are a recent-reviews SAMPLE per storefront, used
+    for the RELATIVE distribution across countries (not lifetime totals)."""
+    __tablename__ = "review_geo"
+    __table_args__ = (
+        UniqueConstraint("show_id", "country", name="uq_reviewgeo_show_country"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    show_id: Mapped[int] = mapped_column(ForeignKey("shows.id"), index=True)
+    country: Mapped[str] = mapped_column(String(8))
+    review_count: Mapped[int] = mapped_column(Integer, default=0)
+    avg_rating: Mapped[float | None] = mapped_column(Float)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

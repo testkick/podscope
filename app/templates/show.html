@@ -192,11 +192,29 @@
   </ul>
   {% endif %}
 
+  {% if review_geo %}
+  <h2 class="sec">Audience geography
+    <span class="verified-tag">review origin</span>
+  </h2>
+  <div class="geo-bars">
+    {% for g in review_geo %}
+    <div class="geo-row">
+      <span class="geo-cc">{{ g.name }}</span>
+      <span class="geo-bar"><span class="geo-fill" style="width:{{ g.pct }}%"></span></span>
+      <span class="geo-pct">{{ g.pct }}%</span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="disclaimer">Share of recent Apple Podcasts reviews by storefront — a
+  measured signal of where this show's engaged audience is, not a modeled estimate.
+  Based on a recent-reviews sample per country.</p>
+  {% endif %}
+
   <div class="paywall">
-    <h3>Audience geography &amp; channel matching</h3>
-    <p>Estimated listener reach by market, review-origin geography, and
-       product-to-show matching are part of PodScope Pro. This free page shows
-       public chart data; the paid layer turns it into a media plan.</p>
+    <h3>Estimated reach &amp; channel matching</h3>
+    <p>Estimated listener reach by market and product-to-show matching are part
+       of PodScope Pro. This free page shows public chart and review data; the
+       paid layer turns it into a media plan.</p>
   </div>
 {% else %}
   <p style="color:var(--muted)">This show isn't charting in any tracked market

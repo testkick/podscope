@@ -384,3 +384,34 @@ def show_links(show) -> dict:
 
 def show_about(show) -> dict:
     return {"host_name": show.host_name, "about": show.about}
+
+
+# ---------- review-origin geography ----------
+from app.db.enrich_models import ReviewGeo  # noqa: E402
+
+_CC_NAMES = {"us": "United States", "ca": "Canada", "gb": "United Kingdom",
+             "au": "Australia", "de": "Germany", "fr": "France"}
+
+
+def show_review_geo(db, show_id: int):
+    """Audience-geography signal: share of recent Apple reviews per storefront.
+    Returns [{country, name, count, pct}] sorted desc, or None if no data."""
+    rows = db.execute(
+        select(ReviewGeo.country, ReviewGeo.review_count, ReviewGeo.avg_rating)
+        .where(ReviewGeo.show_id == show_id, ReviewGeo.country != "_none",
+               ReviewGeo.review_count > 0)
+    ).all()
+    if not rows:
+        return None
+    total = sum(c for _, c, _ in rows)
+    if total == 0:
+        return None
+    out = [{
+        "country": cc,
+        "name": _CC_NAMES.get(cc, cc.upper()),
+        "count": c,
+        "pct": round(100 * c / total),
+        "avg_rating": rating,
+    } for cc, c, rating in rows]
+    out.sort(key=lambda r: r["count"], reverse=True)
+    return out
